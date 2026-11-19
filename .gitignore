@@ -1,0 +1,4 @@
+.skill-lock.json
+skills/*/
+!skills/review-pr-comments/
+.alves/
