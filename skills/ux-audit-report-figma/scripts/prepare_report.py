@@ -36,8 +36,13 @@ def load_destination(setting):
     return {"fileUrl": file_url, "fileKey": match[1]}
 
 
-def evidence_step(number, step, run_dir):
-    result = {"number": number, "action": step["action"], "observation": step["observation"]}
+def evidence_step(number, step, run_dir, finding_numbers):
+    result = {
+        "number": number,
+        "action": step["action"],
+        "observation": step["observation"],
+        "findingNumbers": finding_numbers,
+    }
     if "viewport" in step:
         result["viewport"] = step["viewport"]
     if "image" in step:
@@ -56,7 +61,10 @@ def prepare(run_dir):
     report = load_report(source)
     setting = project_setting(run_dir)
     steps = report["steps"]
-    cited = sorted({number for finding in report["findings"] for number in finding["steps"]})
+    citing_findings = {}
+    for number, finding in enumerate(report["findings"], 1):
+        for step_number in dict.fromkeys(finding["steps"]):
+            citing_findings.setdefault(step_number, []).append(number)
     return {
         "runId": run_dir.name,
         "runDirectory": str(run_dir),
@@ -68,7 +76,10 @@ def prepare(run_dir):
         "findings": report["findings"],
         "findingGroups": finding_groups(report),
         "coverage": report["coverage"],
-        "evidence": [evidence_step(number, steps[number - 1], run_dir) for number in cited],
+        "evidence": [
+            evidence_step(number, steps[number - 1], run_dir, citing_findings[number])
+            for number in sorted(citing_findings)
+        ],
         "clips": [
             {"step": number, "caption": step["clip"]["caption"]}
             for number, step in enumerate(steps, 1)

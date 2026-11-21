@@ -57,6 +57,25 @@ def load_media(media, label, run_dir, mime_types):
     media["data"] = f"data:{mime};base64,{base64.b64encode(content).decode('ascii')}"
 
 
+def check_marker(marker, label):
+    check_type(marker, dict, label)
+    check_text(marker.get("label"), f"{label}.label")
+    for axis in ("x", "y"):
+        coordinate = marker.get(axis)
+        if type(coordinate) not in (int, float) or not 0 <= coordinate <= 100:
+            raise ValueError(f"{label}.{axis} must be a number between 0 and 100")
+
+    if "bounds" in marker:
+        bounds = check_type(marker["bounds"], dict, f"{label}.bounds")
+        for axis, dimension in (("x", "width"), ("y", "height")):
+            start = bounds.get(axis)
+            size = bounds.get(dimension)
+            if type(start) not in (int, float) or not 0 <= start <= 100:
+                raise ValueError(f"{label}.bounds.{axis} must be a number between 0 and 100")
+            if type(size) not in (int, float) or not 0 < size <= 100 or start + size > 100:
+                raise ValueError(f"{label}.bounds.{dimension} must be positive and stay within the screenshot")
+
+
 def load_report(source):
     report = check_type(json.loads(source.read_text(encoding="utf-8")), dict, "report")
     run_dir = source.parent.resolve()
@@ -95,6 +114,7 @@ def load_report(source):
     steps = check_type(report.get("steps"), list, "steps")
     if not steps and (outcome["status"] != "not-tested" or not gaps):
         raise ValueError("An empty walkthrough requires a not-tested outcome and a coverage gap")
+    marker_findings = []
     for number, step in enumerate(steps, 1):
         label = f"step {number}"
         check_type(step, dict, label)
@@ -106,13 +126,11 @@ def load_report(source):
             image = check_type(step["image"], dict, f"{label}.image")
             check_text(image.get("alt"), f"{label}.image.alt")
             markers = check_type(image.get("markers", []), list, f"{label}.image.markers")
-            for marker in markers:
-                check_type(marker, dict, f"{label} marker")
-                check_text(marker.get("label"), f"{label} marker label")
-                for axis in ("x", "y"):
-                    coordinate = marker.get(axis)
-                    if type(coordinate) not in (int, float) or not 0 <= coordinate <= 100:
-                        raise ValueError(f"{label} marker {axis} must be a number between 0 and 100")
+            for index, marker in enumerate(markers, 1):
+                marker_label = f"{label} marker {index}"
+                check_marker(marker, marker_label)
+                if marker.get("finding") is not None:
+                    marker_findings.append((number, marker_label, marker["finding"]))
             load_media(image, f"{label}.image", run_dir, IMAGE_TYPES)
         if "clip" in step:
             clip = check_type(step["clip"], dict, f"{label}.clip")
@@ -139,6 +157,12 @@ def load_report(source):
         references = check_type(finding.get("steps"), list, f"{label}.steps")
         if not references or any(type(n) is not int or not 1 <= n <= len(steps) for n in references):
             raise ValueError(f"{label}.steps must cite at least one existing step by number")
+
+    for step_number, label, finding_number in marker_findings:
+        if type(finding_number) is not int or not 1 <= finding_number <= len(findings):
+            raise ValueError(f"{label}.finding must reference an existing finding by number or be null")
+        if step_number not in findings[finding_number - 1]["steps"]:
+            raise ValueError(f"{label}.finding references finding {finding_number}, which does not cite step {step_number}")
     return report
 
 

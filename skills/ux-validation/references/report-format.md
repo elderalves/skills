@@ -25,7 +25,12 @@ Write `"format_version": 2` in new `walkthrough.json` and `report.json` files, i
       "image": {
         "file": "assets/results.png",
         "alt": "Results table after filtering, with a closed Filters button",
-        "markers": [{"x": 78, "y": 22, "label": "The closed Filters button gives no date range."}]
+        "markers": [{
+          "x": 78, "y": 22,
+          "label": "The closed Filters button gives no date range.",
+          "bounds": {"x": 73, "y": 20, "width": 10, "height": 4},
+          "finding": 1
+        }]
       }
     }
   ],
@@ -52,10 +57,17 @@ Write `"format_version": 2` in new `walkthrough.json` and `report.json` files, i
 ```
 
 - **Outcome.** Use `completed` when the task goal was reached, `blocked` when an observed product issue stopped the task, or `not-tested` when a prerequisite or access gap prevented a meaningful attempt. Explain the outcome in `observation`. Include an observed strength there when it helps explain the outcome. An empty walkthrough requires `not-tested` and a coverage gap.
-- **Steps.** Order steps by capture. Evidence references are one-based positions in this list. `viewport`, `image`, and `clip` are optional. Images accept PNG, JPEG, and WebP. An image's `markers` are optional. Marker coordinates are percentages between 0 and 100. A `clip` has `file` and `caption` fields and accepts MP4 or WebM.
+- **Steps.** Order steps by capture. Evidence references are one-based positions in this list. `viewport`, `image`, and `clip` are optional. Images accept PNG, JPEG, and WebP. An image can include [screenshot markers](#screenshot-markers). A `clip` has `file` and `caption` fields and accepts MP4 or WebM.
 - **Findings.** Provide a title, `category`, `what`, `why`, `confidence`, and at least one cited step. Use `why` to explain the impact on the intended user. Use `observed` for directly demonstrated claims and `hypothesis` for inferred effects, including the anticipated benefit of an idea. Use `review_note` for a material disagreement if relevant. Keep `what` at the level of the product experience.
 - **Takeaways.** When separate UX and UI takeaways help the reader, add an optional `takeaways` object with `ux` and `ui` strings. Ground both in the run's findings. Otherwise the task outcome supplies the summary.
 - **Coverage.** Use `capture` to name the browser tool and explain any fallback. List parts of the task or evidence you could not cover in `gaps`. Each reviewer role has status `completed`, `blocked`, or `unavailable`. Include a `note` when the reviewer did not complete. Before dispatch, `walkthrough.json` uses `unavailable` and a note of `Review pending` for each role. Replace those states when writing `report.json`.
+
+## Screenshot markers
+
+- Record each marker's `label` and point `x` and `y` as percentages of the final saved screenshot, measured from its top-left corner.
+- Add `bounds` when the UI area is visible and measurable in that image. Use `x`, `y`, `width`, and `height` as percentages of the full screenshot, with positive dimensions and the rectangle within the image. Clip partially visible targets to the captured area. For point-only evidence, omit `bounds`.
+- Leave `finding` absent in `walkthrough.json` while the findings are being reconciled. In `report.json`, set it to the finding's one-based position in the final `findings` array when the marker directly supports that finding and the finding cites the step. For step context or an ambiguous association, set `finding` to `null`. Several markers can reference the same finding. Review the associations again if findings move or are merged.
+- Older reports may omit both optional fields. The offline HTML displays the original numbered point and label for each marker. The Figma report uses the association and bounds to pair evidence cards with highlights.
 
 ## Finding categories
 
