@@ -11,6 +11,14 @@ OUTCOMES = {"completed": "Completed", "blocked": "Blocked", "not-tested": "Not t
 REVIEWS = {"completed": "Completed", "blocked": "Blocked", "unavailable": "Unavailable"}
 CONFIDENCE = {"observed": "Observed", "hypothesis": "Hypothesis"}
 PRIORITIES = {"P0": "Stops the task", "P1": "Serious obstacle", "P2": "Avoidable effort", "P3": "Minor friction"}
+CATEGORIES = {
+    "fix": ("Needs to be Fixed", "What to change"),
+    "improvement": ("Needs Improvement", "What to change"),
+    "idea": ("Ideas", "What to try"),
+    "good": ("Good!", "What works"),
+}
+PROBLEM_CATEGORIES = {"fix", "improvement"}
+TAKEAWAYS = {"ux": "Key UX Takeaways", "ui": "Key UI Takeaways"}
 REVIEWERS = {"task-friction": "Task friction", "heuristics": "Heuristics and mental model"}
 IMAGE_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}
 VIDEO_TYPES = {".mp4": "video/mp4", ".webm": "video/webm"}
@@ -52,6 +60,16 @@ def load_media(media, label, run_dir, mime_types):
 def load_report(source):
     report = check_type(json.loads(source.read_text(encoding="utf-8")), dict, "report")
     run_dir = source.parent.resolve()
+    categorized = "format_version" in report
+    if categorized:
+        version = report["format_version"]
+        if type(version) is not int or version != 2:
+            raise ValueError("format_version must be 2 for a categorized report")
+        if "takeaways" in report:
+            takeaways = check_type(report["takeaways"], dict, "takeaways")
+            for key in TAKEAWAYS:
+                check_text(takeaways.get(key), f"takeaways.{key}")
+
     scope = check_type(report.get("scope"), dict, "scope")
     for key in ("url", "section", "user", "task"):
         check_text(scope.get(key), f"scope.{key}")
@@ -109,12 +127,43 @@ def load_report(source):
             check_text(finding.get(key), f"{label}.{key}")
         if "review_note" in finding:
             check_text(finding["review_note"], f"{label}.review_note")
-        check_choice(finding.get("priority"), PRIORITIES, f"{label}.priority")
+        if categorized:
+            check_choice(finding.get("category"), CATEGORIES, f"{label}.category")
+            if finding["category"] in PROBLEM_CATEGORIES:
+                check_choice(finding.get("priority"), PRIORITIES, f"{label}.priority")
+            elif "priority" in finding:
+                raise ValueError(f"{label}.priority is only used for fix and improvement findings")
+        else:
+            check_choice(finding.get("priority"), PRIORITIES, f"{label}.priority")
         check_choice(finding.get("confidence"), CONFIDENCE, f"{label}.confidence")
         references = check_type(finding.get("steps"), list, f"{label}.steps")
         if not references or any(type(n) is not int or not 1 <= n <= len(steps) for n in references):
             raise ValueError(f"{label}.steps must cite at least one existing step by number")
     return report
+
+
+def finding_groups(report):
+    findings = sorted(
+        ({**finding, "number": number} for number, finding in enumerate(report["findings"], 1)),
+        key=lambda finding: finding.get("priority", ""),
+    )
+    if not findings:
+        return []
+    if "format_version" not in report:
+        return [{"heading": None, "whatLabel": "What should improve", "findings": findings}]
+
+    groups = []
+    for category, (heading, what_label) in CATEGORIES.items():
+        items = [finding for finding in findings if finding["category"] == category]
+        if items:
+            groups.append({"heading": heading, "whatLabel": what_label, "findings": items})
+    return groups
+
+
+def report_takeaways(report):
+    if "format_version" not in report or "takeaways" not in report:
+        return []
+    return [{"heading": heading, "text": report["takeaways"][key]} for key, heading in TAKEAWAYS.items()]
 
 
 def render_image(image):
@@ -149,8 +198,11 @@ def render_step(number, step):
     )
 
 
-def render_finding(finding):
-    priority = finding["priority"]
+def render_finding(finding, what_label, heading_tag):
+    priority = finding.get("priority")
+    priority_tag = ""
+    if priority:
+        priority_tag = f'<span class="priority {priority.lower()}">{priority} · {PRIORITIES[priority]}</span>'
     confidence = finding["confidence"]
     links = " ".join(f'<a href="#step-{n}">Step {n}</a>' for n in dict.fromkeys(finding["steps"]))
     note = ""
@@ -158,13 +210,25 @@ def render_finding(finding):
         note = f'<p class="review-note"><strong>Reviewer disagreement</strong> {escape(finding["review_note"])}</p>'
     return (
         f'<article class="card finding"><div class="tags">'
-        f'<span class="priority {priority.lower()}">{priority} · {PRIORITIES[priority]}</span>'
+        f'{priority_tag}'
         f'<span class="confidence {confidence}">{CONFIDENCE[confidence]}</span></div>'
-        f'<h3>{escape(finding["title"])}</h3>'
-        f'<dl><dt>What should improve</dt><dd>{escape(finding["what"])}</dd>'
+        f'<{heading_tag}>{escape(finding["title"])}</{heading_tag}>'
+        f'<dl><dt>{escape(what_label)}</dt><dd>{escape(finding["what"])}</dd>'
         f'<dt>Why it matters</dt><dd>{escape(finding["why"])}</dd></dl>{note}'
         f'<p class="evidence-links"><strong>Evidence</strong> {links}</p></article>'
     )
+
+
+def render_findings(report):
+    sections = []
+    for group in finding_groups(report):
+        heading = group["heading"]
+        heading_tag = "h4" if heading else "h3"
+        cards = "\n".join(render_finding(finding, group["whatLabel"], heading_tag) for finding in group["findings"])
+        if heading:
+            cards = f'<section class="finding-group"><h3>{escape(heading)}</h3>{cards}</section>'
+        sections.append(cards)
+    return "\n".join(sections) or '<p class="card">No findings recorded.</p>'
 
 
 def render_coverage(coverage):
@@ -186,7 +250,10 @@ def render_report(report):
     scope = report["scope"]
     outcome = report["outcome"]
     steps = "\n".join(render_step(n, step) for n, step in enumerate(report["steps"], 1))
-    findings = sorted(report["findings"], key=lambda finding: finding["priority"])
+    takeaways = "".join(
+        f'<div class="takeaway"><h3>{escape(item["heading"])}</h3><p>{escape(item["text"])}</p></div>'
+        for item in report_takeaways(report)
+    )
     template = Path(__file__).resolve().parents[1] / "assets" / "report-template.html"
     return Template(template.read_text(encoding="utf-8")).substitute(
         section=escape(scope["section"]),
@@ -196,7 +263,8 @@ def render_report(report):
         status=outcome["status"],
         outcome=OUTCOMES[outcome["status"]],
         observation=escape(outcome["observation"]),
-        findings="\n".join(map(render_finding, findings)) or '<p class="card">No findings recorded.</p>',
+        takeaways=takeaways,
+        findings=render_findings(report),
         steps=steps or '<p class="card">No walkthrough steps recorded.</p>',
         coverage=render_coverage(report["coverage"]),
     )

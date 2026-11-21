@@ -18,10 +18,11 @@
         body { margin: 0; }
         main { max-width: 58rem; margin: auto; padding: clamp(1rem, 4vw, 3.5rem); }
         header { padding-bottom: 1.35rem; border-bottom: 1px solid var(--line); }
-        h1, h2, h3, p, dl, figure { margin: 0; }
+        h1, h2, h3, h4, p, dl, figure { margin: 0; }
         h1 { font-size: clamp(2rem, 6vw, 3.9rem); letter-spacing: -.055em; line-height: 1.06; }
         h2 { font-size: 1.45rem; letter-spacing: -.025em; margin-bottom: .8rem; }
         h3 { font-size: 1.15rem; line-height: 1.35; letter-spacing: -.015em; }
+        h4 { font-size: 1.05rem; line-height: 1.35; }
         p { overflow-wrap: anywhere; }
         .context, .viewport, dt, figcaption, .reviews span { color: var(--muted); }
         .context { font-size: .93rem; margin-bottom: .45rem; overflow-wrap: anywhere; }
@@ -39,6 +40,9 @@
         .outcome.completed { border-left-color: #2b7a62; }
         .outcome.blocked { border-left-color: #b74235; }
         .outcome p, .step p { margin-top: .45rem; }
+        .takeaway { margin-top: .85rem; }
+        .finding-group + .finding-group { margin-top: 1.35rem; }
+        .finding-group > h3 { margin-bottom: .55rem; }
         .tags { display: flex; gap: .35rem; flex-wrap: wrap; margin-bottom: .65rem; }
         .tags span { font-size: .78rem; font-weight: 650; border-radius: .3rem; padding: .1rem .45rem; }
         .priority.p0 { background: #fce8e6; color: #8a2b22; }
@@ -100,6 +104,7 @@
         <section class="card outcome $status" aria-label="Task outcome">
             <h2>Task outcome · $outcome</h2>
             <p>$observation</p>
+            $takeaways
         </section>
         <section id="findings" aria-labelledby="findings-heading">
             <h2 id="findings-heading">Findings</h2>

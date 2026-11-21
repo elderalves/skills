@@ -7,7 +7,7 @@ from urllib.parse import urlsplit
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "ux-validation" / "scripts"))
-from render_report import load_report
+from render_report import finding_groups, load_report, report_takeaways
 
 
 def project_setting(run_dir):
@@ -64,7 +64,9 @@ def prepare(run_dir):
         "destination": load_destination(setting),
         "scope": report["scope"],
         "outcome": report["outcome"],
+        "takeaways": report_takeaways(report),
         "findings": report["findings"],
+        "findingGroups": finding_groups(report),
         "coverage": report["coverage"],
         "evidence": [evidence_step(number, steps[number - 1], run_dir) for number in cited],
         "clips": [

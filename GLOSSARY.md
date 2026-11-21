@@ -28,6 +28,14 @@ A specific strength, problem, or idea grounded in walkthrough evidence that expl
 
 The label for the kind of finding and the response it calls for. The categories are Good!, Needs Improvement, Idea, and Needs to be Fixed.
 
+**Needs Improvement**
+
+A problem that adds avoidable friction while the task remains reliably achievable.
+
+**Needs to be Fixed**
+
+A problem that prevents reliable task completion or creates a consequential error.
+
 **Priority**
 
 The P0–P3 ranking of a problem by its impact on the task under review.
