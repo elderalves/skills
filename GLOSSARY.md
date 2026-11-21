@@ -8,13 +8,29 @@ UX validation examines how well a person can accomplish a specific task in a pro
 
 A scoped review that attempts a task in the running product from the intended user's perspective and examines both the outcome and any friction along the way.
 
+**Validation run**
+
+One attempt to validate the UX of a scoped task, with its recorded outcome, walkthrough, and findings.
+
+**Figma audit report**
+
+An editable presentation of a validation run's task outcome, findings grouped by category, supporting evidence, and next steps when the run supports them.
+
 **Walkthrough**
 
 An ordered record of the actions taken to attempt a task and the product states observed along the way.
 
 **Finding**
 
-A specific issue in the reviewed experience that identifies what should improve and explains why it matters to the user.
+A specific strength, problem, or idea grounded in walkthrough evidence that explains why it matters to the intended user.
+
+**Finding category**
+
+The label for the kind of finding and the response it calls for. The categories are Good!, Needs Improvement, Idea, and Needs to be Fixed.
+
+**Priority**
+
+The P0–P3 ranking of a problem by its impact on the task under review.
 
 **Evidence**
 

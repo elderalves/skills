@@ -2,4 +2,6 @@
 skills/*/
 !skills/review-pr-comments/
 !skills/ux-validation/
+!skills/ux-audit-report-figma/
 .alves/
+.ux/
