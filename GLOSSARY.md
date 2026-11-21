@@ -44,6 +44,14 @@ The P0–P3 ranking of a problem by its impact on the task under review.
 
 An observation from the walkthrough that supports a finding, such as a captured screen or a recorded interaction.
 
+**Evidence highlight**
+
+A mark on a screenshot that identifies the part of the interface supporting a finding.
+
+**Evidence card**
+
+A numbered note beside a screenshot that identifies the finding and shares its number and category with the corresponding evidence highlight.
+
 **Hypothesis**
 
 A proposed explanation or user impact that goes beyond what the walkthrough directly established.

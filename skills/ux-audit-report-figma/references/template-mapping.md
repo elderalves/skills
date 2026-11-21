@@ -2,9 +2,24 @@
 
 ## Project destination
 
-Use the project's editable copy of [Headway’s Report Template](https://www.figma.com/design/0BZsJPlDkRJDvrLPLXDO1k/UX-Audit---Report-Template--Community-?node-id=17-1052). When a project is being set up, verify edit access through the Figma session and inspect the copy for the `Title Slide`, `General Slide`, and `Audit Slide` frames. Resolve the copy's layer IDs and typography from the file itself. The [worked report](https://www.figma.com/design/0BZsJPlDkRJDvrLPLXDO1k/UX-Audit---Report-Template--Community-?node-id=17-770) illustrates how the starter frames are used. If the user has only the Community original, ask for the link to an [editable duplicate](https://help.figma.com/hc/en-us/articles/360038510873-Duplicate-Community-files).
+Use the Figma destination explicitly supplied for the report, then the preparation output’s `destination` if set, then the **Templates** page of Headway’s UX Audit Report Template below. A missing `.ux/figma-report.json` uses the built-in default. The Audit Template supplies evidence layout examples.
 
-After verifying a newly supplied destination, save `{"fileUrl":"https://www.figma.com/design/<editable-file-key>/..."}` at `projectSetting` from the preparation output, when that path is present. Create the setting atomically if it is absent. If another invocation has saved a destination, read it back and use that file. Keep the Community files and the project's source frames as read-only inputs. Start from the supplied copy with its existing sharing settings.
+Inspect the destination for `Title Slide`, `General Slide`, and `Audit Slide`. Resolve layer IDs and typography from that file, then check for the run’s report page. Figma adds “(Community)” to the names of duplicates too. Use Figma’s access status or the result of reserving the report page to determine write access. Keep the template pages and sharing settings intact.
+
+### View-only destinations
+
+When Figma confirms the destination is view-only, use a draft copy unless the user requires that specific destination. Follow the saving procedure below before duplicating the built-in Report Template into the signed-in user’s Drafts. Use Figma’s **Duplicate to drafts** action or its documented `/duplicate` URL with the query string removed. Read the new file URL from Figma, inspect its starter frames, and reserve or resume the report there. If a duplication result is unclear, check Drafts before retrying. If Figma prevents the required edit or duplication, report the access needed. [Figma’s duplication instructions](https://help.figma.com/hc/en-us/articles/360038511533-Duplicate-or-copy-files)
+
+### Save the project destination
+
+When `projectSetting` is present, save a verified project destination or a new draft copy there as `{"fileUrl":"https://www.figma.com/design/<file-key>/..."}`. Use the run lock procedure on the settings directory before creating a draft or saving a destination. Re-read the setting under that lock. If another invocation saved a destination, reuse it for the fallback. Save atomically when the setting is absent or still points to the destination Figma confirmed was view-only. A supplied override applies to the current run when the project already has a different working setting.
+
+## Figma template links
+
+| Template | Pages |
+|---|---|
+| UX Audit Template | [Introduction](https://www.figma.com/design/82aOK35i6UnifxgL5pFAtF/UX-Audit---Template--Community-?node-id=19-420&p=f&t=ravyLJU8mg8nTiGJ-0) · [Audit Example](https://www.figma.com/design/82aOK35i6UnifxgL5pFAtF/UX-Audit---Template--Community-?node-id=17-772) · [Components](https://www.figma.com/design/82aOK35i6UnifxgL5pFAtF/UX-Audit---Template--Community-?node-id=0-1&p=f&t=ravyLJU8mg8nTiGJ-0) |
+| UX Audit Report Template | [Introduction](https://www.figma.com/design/0BZsJPlDkRJDvrLPLXDO1k/UX-Audit---Report-Template--Community-?node-id=19-420&p=f&t=WZQLrGTQByRw2ryp-0) · [Components](https://www.figma.com/design/0BZsJPlDkRJDvrLPLXDO1k/UX-Audit---Report-Template--Community-?node-id=0-1&p=f&t=WZQLrGTQByRw2ryp-0) · [Report Example](https://www.figma.com/design/0BZsJPlDkRJDvrLPLXDO1k/UX-Audit---Report-Template--Community-?node-id=17-770&p=f&t=WZQLrGTQByRw2ryp-0) · [Templates](https://www.figma.com/design/0BZsJPlDkRJDvrLPLXDO1k/UX-Audit---Report-Template--Community-?node-id=17-1052&p=f&t=WZQLrGTQByRw2ryp-0) |
 
 ## Report page and retries
 
@@ -27,7 +42,7 @@ Keep the original frames' visual hierarchy and native styling. Use continuations
 
 ### Evidence appendix
 
-Use one evidence frame per cited step. A step without a screenshot still gets a frame that the finding can link to. Use [the companion Audit Template example](https://www.figma.com/design/82aOK35i6UnifxgL5pFAtF/UX-Audit---Template--Community-?node-id=17-772) for the screenshot, pin, and callout relationship. P0–P3 priorities carry problem severity, and confidence labels show whether a claim is observed or inferred.
+Use one evidence frame per cited step. A step without a screenshot still gets a frame that the finding can link to. Use the [Audit Example](#figma-template-links) for the screenshot, pin, and callout relationship. P0–P3 priorities carry problem severity, and confidence labels show whether a claim is observed or inferred.
 
 Upload each cited image using `upload_assets` on the report page, targeting its screenshot layer and using the prepared path and MIME type. If an image exceeds the connector's upload limit, optimize a temporary copy at the same aspect ratio. Fit each image inside the audit frame and use `alt` for its layer name or caption. Place each editable pin at the percentage `x` and `y` of the visible image bounds, accounting for any fit offset. Number the pins in source order and repeat each number next to its label. Check the smallest viewport on the canvas.
 
