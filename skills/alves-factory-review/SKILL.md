@@ -8,7 +8,7 @@ Run one **Council round** on the Plan in a factory work dir and return its **Gat
 
 ## Inputs
 
-- `<work-dir>`: the run's `.factory/<ticket>/` directory, holding `ticket.md` (the Upstream ticket), `PLAN.md` and `ASSUMPTIONS.md`. The current directory is the project repo the Plan targets.
+- `<work-dir>`: the run's work dir (`~/.factory/runs/<upstream-ref>/`, outside the project repo), holding `ticket.md` (the Upstream ticket), `PLAN.md` and `ASSUMPTIONS.md`. The current directory is the project repo the Plan targets.
 - `--revision <N>`: `0` for the first Plan, `1` after the first Revise, and so on. Round `N` lives in `<work-dir>/round-<N>/`.
 - `--policy <file>`: policy overrides to pass to the gate, in order (the caller supplies `~/.factory/policy.json` and any project override).
 
