@@ -1,6 +1,7 @@
 """Run with: python -m unittest discover <this-dir>. No network: a fake transport answers by operation."""
 
 import unittest
+from pathlib import Path
 
 import linear as linear_mod
 from linear import MARKER, Linear, LinearError
@@ -102,9 +103,19 @@ class LinearTests(unittest.TestCase):
         with self.assertRaises(LinearError):
             Linear(fake).set_state("ALV-1", "Nope")
 
+    def test_api_key_prefers_environment_then_env_file(self):
+        import tempfile
+        env_file = Path(tempfile.mkdtemp()) / ".env"
+        env_file.write_text("OTHER=x\nexport LINEAR_ALVES_API_KEY='lin_api_file'\n", encoding="utf-8")
+        self.assertEqual(linear_mod.api_key({"LINEAR_ALVES_API_KEY": "lin_api_env"}, env_file), "lin_api_env")
+        self.assertEqual(linear_mod.api_key({}, env_file), "lin_api_file")
+        self.assertEqual(linear_mod.api_key({"LINEAR_API_KEY": "generic"}, env_file), "lin_api_file")
+        with self.assertRaises(LinearError):
+            linear_mod.api_key({}, env_file.with_name("missing.env"))
+
     def test_cli_reports_errors_with_exit_1(self):
         def boom(query, variables):
-            raise LinearError("LINEAR_API_KEY is not set")
+            raise LinearError("LINEAR_ALVES_API_KEY is not set")
         self.assertEqual(linear_mod.main(["get", "ALV-1"], linear=Linear(boom)), 1)
 
 

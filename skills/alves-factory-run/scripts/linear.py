@@ -1,6 +1,7 @@
 """Read and write the factory's record on Linear (the Factory tracker) via the GraphQL API.
 
-Needs LINEAR_API_KEY (a personal API key) in the environment. Every command prints JSON.
+Needs a Linear personal API key: the LINEAR_ALVES_API_KEY environment variable, or a
+LINEAR_ALVES_API_KEY=... line in ~/.factory/.env. Every command prints JSON.
 
     python linear.py find-by-url <upstream-url>
     python linear.py get <issue>
@@ -26,6 +27,8 @@ from pathlib import Path
 
 API_URL = "https://api.linear.app/graphql"
 MARKER = "[alves-factory]"
+KEY_NAME = "LINEAR_ALVES_API_KEY"
+ENV_FILE = Path.home() / ".factory" / ".env"
 
 ISSUE_FIELDS = """
   id identifier title url createdAt
@@ -41,10 +44,23 @@ class LinearError(Exception):
     pass
 
 
+def api_key(environ=os.environ, env_file=ENV_FILE):
+    """The key from the environment, else from env_file's KEY_NAME=... line."""
+    if environ.get(KEY_NAME):
+        return environ[KEY_NAME].strip()
+    try:
+        lines = env_file.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        lines = []
+    for line in lines:
+        name, sep, value = line.strip().partition("=")
+        if sep and name.strip().removeprefix("export ").strip() == KEY_NAME:
+            return value.strip().strip("'\"")
+    raise LinearError(f"{KEY_NAME} is not set (environment variable, or a line in {env_file})")
+
+
 def http_transport(query, variables):
-    key = os.environ.get("LINEAR_API_KEY")
-    if not key:
-        raise LinearError("LINEAR_API_KEY is not set")
+    key = api_key()
     request = urllib.request.Request(
         API_URL,
         data=json.dumps({"query": query, "variables": variables}).encode("utf-8"),

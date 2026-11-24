@@ -6,4 +6,5 @@ skills/*/
 !skills/alves-factory-*/
 __pycache__/
 .alves/
-.ux/
+.ux/.env
+*.env

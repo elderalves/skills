@@ -6,7 +6,7 @@ argument-hint: <factory-ticket | upstream-ref> [--dry-run]
 
 Run one **implementation run**: from an approved Plan to a draft PR. The run ends in **In Review** or **Blocked** and never waits for a human. Terms follow the factory glossary (`docs/factory/GLOSSARY.md` in the skills repo). The Linear record, the Upstream trackers and the config are shared with `alves-factory-run`:
 
-- [linear-record.md](../alves-factory-run/references/linear-record.md), through `python ../alves-factory-run/scripts/linear.py` (needs `LINEAR_API_KEY`; use `python3` where `python` is not Python 3);
+- [linear-record.md](../alves-factory-run/references/linear-record.md), through `python ../alves-factory-run/scripts/linear.py` (needs `LINEAR_ALVES_API_KEY`, as an environment variable or a line in `~/.factory/.env`; use `python3` where `python` is not Python 3);
 - [trackers.md](../alves-factory-run/references/trackers.md);
 - [config.md](../alves-factory-run/references/config.md).
 
