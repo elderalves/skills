@@ -8,6 +8,7 @@ Needs LINEAR_API_KEY (a personal API key) in the environment. Every command prin
     python linear.py set-state <issue> <state-name>
     python linear.py set-label <issue> <label>          # replaces any label sharing the prefix before ':'
     python linear.py put-doc <issue> --title <t> --file <f>   # creates, or updates the doc with that title
+    python linear.py get-doc <issue> --title <t> [--out <f>]  # prints the doc, or writes its content to <f>
     python linear.py comment <issue> --file <f>
     python linear.py comments <issue> [--since <iso-datetime>]
     python linear.py mark-duplicate <issue> --of <original-issue>
@@ -198,6 +199,14 @@ class Linear:
             )["documentCreate"]["document"]
         return doc
 
+    def get_doc(self, ref, title):
+        issue = self.issue(ref)
+        matches = [d for d in issue["documents"]["nodes"] if d["title"] == title]
+        if not matches:
+            raise LinearError(f"{issue['identifier']} has no document titled {title!r}")
+        return self.gql("query($id: String!) { document(id: $id) { id title url content updatedAt } }",
+                        {"id": matches[0]["id"]})["document"]
+
     def comment(self, ref, body):
         if not body.lstrip().startswith(MARKER):
             body = f"{MARKER}\n\n{body}"
@@ -239,6 +248,10 @@ def main(argv=None, linear=None):
     p.add_argument("issue")
     p.add_argument("--title", required=True)
     p.add_argument("--file", type=Path, required=True)
+    p = sub.add_parser("get-doc")
+    p.add_argument("issue")
+    p.add_argument("--title", required=True)
+    p.add_argument("--out", type=Path)
     p = sub.add_parser("comment")
     p.add_argument("issue")
     p.add_argument("--file", type=Path, required=True)
@@ -267,6 +280,11 @@ def main(argv=None, linear=None):
             result = linear.set_label(args.issue, args.label)
         elif args.command == "put-doc":
             result = linear.put_doc(args.issue, args.title, read(args.file))
+        elif args.command == "get-doc":
+            result = linear.get_doc(args.issue, args.title)
+            if args.out:
+                args.out.write_text(result.get("content") or "", encoding="utf-8")
+                result = {k: v for k, v in result.items() if k != "content"} | {"written": str(args.out)}
         elif args.command == "comment":
             result = linear.comment(args.issue, read(args.file))
         elif args.command == "comments":

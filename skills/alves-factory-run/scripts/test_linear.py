@@ -73,6 +73,13 @@ class LinearTests(unittest.TestCase):
         Linear(fake).put_doc("ALV-1", "Plan", "v1")
         self.assertEqual(fake.called("documentCreate")[0]["input"]["issueId"], "i1")
 
+    def test_get_doc_by_title(self):
+        fake = Fake({"document(id": {"document": {"id": "d-Plan", "title": "Plan", "content": "# Plan"}},
+                     "issue(id": {"issue": issue(docs=["Plan"])}})
+        self.assertEqual(Linear(fake).get_doc("ALV-1", "Plan")["content"], "# Plan")
+        with self.assertRaises(LinearError):
+            Linear(fake).get_doc("ALV-1", "Missing")
+
     def test_comment_adds_marker_once(self):
         fake = Fake({"commentCreate": {"commentCreate": {"comment": {"id": "c"}}}, "issue(id": {"issue": issue()}})
         Linear(fake).comment("ALV-1", "hello")
