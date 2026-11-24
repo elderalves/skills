@@ -22,9 +22,14 @@ Run one **planning run**: from an Upstream ticket to a Gate decision, with no hu
 
 ## Process
 
-1. **Resolve the project.** For a Factory ticket, read it with `linear.py get` and take the upstream ref from its Upstream link's title. Match the upstream ref against `~/.factory/projects.json` per [references/config.md](references/config.md). The **work dir** is `~/.factory/runs/<upstream-ref, with / # : replaced by ->/`; empty it, then create it. Work in the project's `repo`, updated to the latest `base_branch` without touching uncommitted work (when the checkout is dirty, stop Blocked).
+1. **Resolve the project.** For a Factory ticket, read it with `linear.py get`:
+   - with an Upstream link: the upstream ref is the link's title;
+   - without one, in a Linear project that a `linear-project:` entry matches: it is a **Native ticket**, and its own identifier (`ALV-12`) is the upstream ref;
+   - otherwise it is no factory work (an ordinary ticket moved to Ready): exit with no writes.
 
-2. **Claim the Factory ticket.** `linear.py find-by-url <upstream-url>`:
+   Match the upstream ref against `~/.factory/projects.json` per [references/config.md](references/config.md). The **work dir** is `~/.factory/runs/<upstream-ref, with / # : replaced by ->/`; empty it, then create it. Work in the project's `repo`, updated to the latest `base_branch` without touching uncommitted work (when the checkout is dirty, stop Blocked).
+
+2. **Claim the Factory ticket.** A Native ticket is its own Factory ticket: skip the lookup and apply only the status rules below. Otherwise `linear.py find-by-url <upstream-url>`:
    - none: `linear.py create` it in the `linear_team` with status Planning, then run `find-by-url` again; if an older ticket now exists, `mark-duplicate` yours `--of` it and exit;
    - more than one: `mark-duplicate` every ticket but the oldest, then continue with the oldest;
    - its status is Planning, Plan Review or In Progress: another run owns it; exit with no writes;

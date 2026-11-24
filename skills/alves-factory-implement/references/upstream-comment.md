@@ -18,4 +18,4 @@ Draft PR: <PR url>
 - Keep it under twenty lines: the PR carries the detail.
 - Use the ticket's vocabulary, not the factory's: no Plan, Council, Gate decision, scores, Risk flags or Linear links.
 - A retried run that updates an existing PR edits its earlier comment when the tracker allows it (`addOrEditJiraIssueComment` with the `commentId`), and otherwise posts a new one saying what changed since.
-- For a `pasted` ticket there is no Upstream ticket: put this text in the Factory ticket comment instead.
+- For a Native ticket (`linear`) or a `pasted` ticket there is no separate Upstream ticket: put this text in the Factory ticket comment instead, as one factory comment with the PR link and verification.

@@ -20,6 +20,10 @@ _Avoid_: real tracker, client tracker, ticket source, source tracker
 The ticket in an Upstream tracker that describes the work to be done. Each Upstream ticket has exactly one Factory ticket.
 _Avoid_: original ticket, source ticket, Jira ticket
 
+**Native ticket**:
+A Factory ticket that is also the work's Upstream ticket, for a project with no Upstream tracker of its own: the owner files the work directly in the Factory tracker.
+_Avoid_: internal ticket, Linear-only ticket, self-ticket
+
 ## Plans and review
 
 **Plan**:

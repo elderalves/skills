@@ -31,7 +31,8 @@ KEY_NAME = "LINEAR_ALVES_API_KEY"
 ENV_FILE = Path.home() / ".factory" / ".env"
 
 ISSUE_FIELDS = """
-  id identifier title url createdAt
+  id identifier title description url createdAt
+  project { id name }
   state { id name type }
   team { id name key }
   labels { nodes { id name } }

@@ -23,10 +23,10 @@ Maps an Upstream ticket to the project the factory works in. Example: [projects.
 
 - `linear_team`: the Factory tracker team whose statuses match [linear-record.md](linear-record.md).
 - `projects`: tried in order; the first whose `match` is a prefix of the Upstream reference wins.
-  - `match`: a Jira key prefix (`PROJ-`), or `github:<owner>/<repo>#` for GitHub Issues.
+  - `match`: a Jira key prefix (`PROJ-`), `github:<owner>/<repo>#` for GitHub Issues, or `linear-project:<Linear project name>` for **Native tickets**. A `linear-project:` entry matches a Factory ticket in that Linear project with no Upstream link; it never matches by prefix.
   - `repo`: absolute path of the project checkout on the runner.
   - `base_branch`: the branch implementation branches start from and PRs target.
-  - `upstream.type`: `jira` or `github`, per [trackers.md](trackers.md); `upstream.site` is the Jira site.
+  - `upstream.type`: `jira`, `github` or `linear` (Native tickets), per [trackers.md](trackers.md); `upstream.site` is the Jira site.
   - `policy`: optional project policy override, layered over the owner's.
 
 No matching project, a missing `repo`, or an unknown `upstream.type` stops the run as **Blocked**, naming the reference that failed to match.

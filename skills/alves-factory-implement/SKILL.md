@@ -25,7 +25,7 @@ Run one **implementation run**: from an approved Plan to a draft PR. The run end
 
 ## Process
 
-1. **Resolve.** Read the Factory ticket with `linear.py get` (find it with `find-by-url` when given an upstream ref) and take the upstream ref from its Upstream link's title. Match the project per [config.md](../alves-factory-run/references/config.md). The work dir is the planning run's `~/.factory/runs/<upstream-ref>/`; this run writes under its `implementation/` subdirectory.
+1. **Resolve.** Read the Factory ticket with `linear.py get` (find it with `find-by-url` when given an upstream ref) and take the upstream ref from its Upstream link's title; a Native ticket (no Upstream link, in a Linear project a `linear-project:` entry matches) is its own upstream ref. Match the project per [config.md](../alves-factory-run/references/config.md). The work dir is the planning run's `~/.factory/runs/<upstream-ref>/`; this run writes under its `implementation/` subdirectory.
 
 2. **Claim.** The ticket must be in **Plan Approved**: In Progress means another run owns it, anything else means no trigger; either way exit with no writes. Set **In Progress**.
 

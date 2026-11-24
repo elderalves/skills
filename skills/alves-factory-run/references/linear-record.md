@@ -5,6 +5,7 @@ The Factory ticket on Linear is the factory's only durable record (ADR `docs/fac
 ## The Factory ticket
 
 - **Title:** `<upstream-ref>: <upstream title>`.
+- **Native tickets** are filed by the owner, so the factory leaves their title and description alone and adds no Upstream link; the rest of this record applies to them unchanged.
 - **Upstream link:** one attachment whose URL is the Upstream ticket's URL and whose title is the **upstream ref** (`PROJ-123`, `github:acme/widgets#12`, or `pasted:<slug>`). The URL is the deduplication key; the title tells a later run which project and Upstream ticket it belongs to.
 - **Description:** the Upstream link and the project name, nothing else. The record lives in documents and comments.
 - **Documents:** `Plan` (the current `PLAN.md`) and `Assumptions` (the current `ASSUMPTIONS.md`), updated in place on every revision.
