@@ -3,5 +3,7 @@ skills/*/
 !skills/review-pr-comments/
 !skills/ux-validation/
 !skills/ux-audit-report-figma/
+!skills/alves-factory-*/
+__pycache__/
 .alves/
 .ux/

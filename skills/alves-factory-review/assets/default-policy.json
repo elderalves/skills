@@ -1,0 +1,27 @@
+{
+  "weights": {
+    "requirements": 25,
+    "architecture": 20,
+    "grounding": 15,
+    "feasibility": 15,
+    "testing": 15,
+    "risk": 10
+  },
+  "min_reviews": 3,
+  "min_providers": 3,
+  "implement": {
+    "min_average": 90,
+    "min_lowest": 85,
+    "max_spread": 10
+  },
+  "escalate_below_average": 75,
+  "max_revisions": 2,
+  "risk_flags": {
+    "data-migration": "Migrates, backfills or deletes persisted data",
+    "auth": "Touches authentication, permissions or secrets",
+    "public-contract": "Breaks a public API, event, schema or other contract",
+    "infrastructure": "Changes infrastructure, CI or production configuration",
+    "large-change": "Changes more than 15 files",
+    "dependency": "Adds or upgrades a dependency"
+  }
+}
