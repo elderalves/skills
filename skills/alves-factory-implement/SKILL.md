@@ -22,6 +22,7 @@ Run one **implementation run**: from an approved Plan to a draft PR. The run end
 - The Plan is the scope. A small correction the Plan clearly intended (a renamed path, a typo in a command) is a **deviation** you make and record. A change to what the Plan builds, or work it does not list, is not yours to make: stop **Blocked**, so the owner can re-plan.
 - Commit only what the task's **Files** block names plus the tests it adds; never commit secrets, `.env` files or work-dir files.
 - Any failure the steps do not handle ends the run **Blocked** (step 9).
+- However the run ends (In Review, Blocked, or a dry run's stop), it leaves the checkout clean and on its **starting branch** (step 4), keeping the factory branch: the owner's or the trigger's checkout is as it was found.
 
 ## Process
 
@@ -31,16 +32,18 @@ Run one **implementation run**: from an approved Plan to a draft PR. The run end
 
 3. **Rebuild the Plan.** `linear.py get-doc --title Plan --out <work-dir>/PLAN.md`, and the same for `Assumptions`. Re-read the Upstream ticket into `ticket.md` per [trackers.md](../alves-factory-run/references/trackers.md). A Plan with no tasks (its blocked form) cannot be implemented: stop Blocked, asking the owner to answer its Blockers and move the ticket to Ready.
 
-4. **Branch.** In the current directory when it is a checkout of the project's repo (T3 Code starts each run in its own worktree), otherwise in the configured `repo`; with a clean checkout (dirty: stop Blocked), fetch and branch `factory/<upstream-ref slug>` from the latest `base_branch`. When that branch already exists (a retried run), check it out and continue from it: tasks whose commits already exist on it are done.
+   **Minor fixes.** When the ticket's label is `gate:escalate`, the owner approved an escalated Plan as it stands. Take the last round's `decision.json` (from the last round comment's raw-decision block; in a dry run, the work dir's last `round-<N>/decision.json`) and keep its Issues marked `"minor": true`: these are the **minor fixes**. Each goes to the task whose **Files** block holds the code it concerns; one that fits no task is skipped and recorded. Major Issues and Blockers are never applied: they need a re-plan.
 
-5. **Implement each task in order.** For each remaining task, dispatch a fresh subagent with the Plan's header, **Global Constraints** and **Review Focus**, that one task, the **Interfaces** blocks of the tasks before it, `ASSUMPTIONS.md`, and these instructions: follow the `tdd` skill (failing test first, then the minimal code, then green), run the task's verification commands, and report the result plus any deviation. Then check its work yourself:
+4. **Branch.** In the current directory when it is a checkout of the project's repo (T3 Code starts each run in its own worktree), otherwise in the configured `repo`; record the branch the checkout is on as the **starting branch**. With a clean checkout (dirty: stop Blocked), fetch and branch `factory/<upstream-ref slug>` from the latest `base_branch`. When that branch already exists (a retried run), check it out and continue from it: tasks whose commits already exist on it are done.
+
+5. **Implement each task in order.** First install what **Global Constraints** says to install and run the repo's checks once as a baseline: a red baseline stops the run Blocked, since no task's result could be read against it. Then, for each remaining task, dispatch a fresh subagent with [references/implementer-brief.md](references/implementer-brief.md) and the inputs it lists, including the task's minor fixes. Then check its work yourself:
    - run the task's verification commands and confirm the expected output;
-   - read the diff against the task's **Files** block and steps;
-   - commit as `<upstream-ref>: task <N>: <task name>`.
+   - read the diff against the task's **Files** block, steps and minor fixes;
+   - commit as `<upstream-ref>: task <N>: <task name>`, with each deviation and minor fix the task carried listed in the commit body.
 
    A task whose tests stay red after the subagent and one fix attempt of your own, or that needs a change outside the guardrails, stops the run Blocked with the task number, the failing output and what the Plan got wrong. **Done when** every task has its commit.
 
-6. **Verify the branch.** Run the repo's full checks as its own config defines them (test, lint, typecheck and build scripts in `package.json`, `Makefile`, CI workflows or the repo's `AGENTS.md`). Fix what the change broke, committing each fix as `<upstream-ref>: fix: <what>`. Write `implementation/verification.md`: every command, its result, and every recorded deviation. In a dry run, stop here and reply with the branch, the commits and `verification.md`.
+6. **Verify the branch.** Run the repo's full checks as its own config defines them (test, lint, typecheck and build scripts in `package.json`, `Makefile`, CI workflows or the repo's `AGENTS.md`). Fix what the change broke, committing each fix as `<upstream-ref>: fix: <what>`. Write `implementation/verification.md`: every command, its result, every recorded deviation, and every minor fix applied or skipped. In a dry run, stop here and reply with the branch, the commits and `verification.md`.
 
 7. **Open the draft PR.** Push the branch and run `gh pr create --draft --base <base_branch> --head <branch>` with a body that a reviewer on the project team can use: the Upstream ticket link, what changed and why (from the Plan's Goal, Architecture and Approach), the tasks, the verification, and the Assumptions worth a reviewer's attention. The body stays free of factory internals: no Linear links, no Council scores. Retried runs update the existing PR rather than opening another (`gh pr view <branch>` finds it). The factory supports GitHub as the git host; any other host stops Blocked after the push.
 
