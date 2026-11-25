@@ -42,7 +42,10 @@ Assemble the read into `<work-dir>/ticket.md`, the only ticket source the planne
 ## Owner answers
 
 ### <date>
-<each answer the owner gave on the Factory ticket, verbatim, per linear-record.md>
+> Answering the factory's escalation of <date>:
+> <that escalation comment's questions, verbatim; omit this quote for an answer no escalation precedes>
+
+<the owner's answer, verbatim, per linear-record.md>
 
 ## Parent ticket (context only)
 

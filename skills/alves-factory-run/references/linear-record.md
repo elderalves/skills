@@ -45,14 +45,14 @@ Every factory comment starts with the `[alves-factory]` marker, which `linear.py
 
 <the round's summary.md>
 
-<details><summary>Raw decision</summary>
+**Raw decision**
 
 ```json
 <the round's decision.json>
 ```
-
-</details>
 ````
+
+Linear renders no HTML, so the raw decision is a plain fenced block, never a `<details>` wrapper.
 
 **Escalation comment**: what the owner must decide, then how to resume:
 
@@ -75,3 +75,5 @@ or move it to **Plan Approved** to implement the current Plan as it stands.
 ## Owner answers
 
 Every comment without the marker is an **owner answer**. A planning run copies all of them, oldest first, into `ticket.md`'s **Owner answers** section ([trackers.md](trackers.md)); they settle the questions they answer.
+
+An answer that follows an escalation comment usually points into it ("Q1: follow your recommendation"), so copy each one under the escalation comment it answers (the latest one posted before it), quoting that comment's **Needs your decision** questions verbatim. The planner then sees the question, the options, the recommendation and the answer together, and settles the question with the option the owner chose.
