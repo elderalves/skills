@@ -51,7 +51,7 @@ A defect in a Plan that the planner can fix without the owner's input.
 _Avoid_: finding, comment, nit
 
 **Risk flag**:
-A declared property of a Plan, such as a data migration or an auth change, that makes the work unsafe to implement without the owner.
+A declared property of a Plan, such as a data migration or an auth change, that raises the bar the Plan must clear. An **escalate** flag sends the Plan to the owner before any code; a **strict** flag lets it pass on its own only when every reviewer approves and every risk score reaches the strict bar.
 _Avoid_: high risk, danger
 
 **Gate decision**:

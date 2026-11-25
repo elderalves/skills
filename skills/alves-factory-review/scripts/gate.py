@@ -20,6 +20,7 @@ from pathlib import Path
 
 DEFAULT_POLICY = Path(__file__).resolve().parent.parent / "assets" / "default-policy.json"
 VERDICTS = {"approve", "revise", "escalate"}
+TIERS = {"escalate", "strict"}
 
 
 class PolicyError(Exception):
@@ -66,8 +67,23 @@ def check_policy(policy):
         implement.get("min_lowest"),
         implement.get("max_spread"),
     ]
-    if any(not is_number(n) for n in numbers):
+    strict = policy.get("strict", {})
+    if any(not is_number(n) for n in numbers + [strict.get("min_risk_score")]):
         raise PolicyError("policy is missing a numeric threshold")
+    flags = policy.get("risk_flags", {})
+    if not isinstance(flags, dict):
+        raise PolicyError("policy.risk_flags must be an object")
+    for flag, spec in flags.items():
+        if isinstance(spec, dict) and spec.get("tier", "escalate") not in TIERS:
+            raise PolicyError(f"policy.risk_flags.{flag}.tier must be one of {sorted(TIERS)}")
+    if any(flag_tier(policy, f) == "strict" for f in flags) and "risk" not in weights:
+        raise PolicyError("strict-tier Risk flags need a risk criterion in policy.weights")
+
+
+def flag_tier(policy, flag):
+    """A flag's tier: a plain-string or unknown flag is escalate, the safe default."""
+    spec = policy.get("risk_flags", {}).get(flag)
+    return spec.get("tier", "escalate") if isinstance(spec, dict) else "escalate"
 
 
 def is_number(value):
@@ -163,6 +179,9 @@ def evaluate(reviews, revision, plan_risk_flags, policy, load_problems=()):
     spread = round(max(scores) - min(scores), 1) if scores else None
     providers = {s["provider"].strip().lower() for s in summaries}
     unknown_flags = [f for f in risk_flags if f not in policy.get("risk_flags", {})]
+    tiers = {f: flag_tier(policy, f) for f in risk_flags}
+    escalating = [f for f in risk_flags if tiers[f] == "escalate"]
+    strict = [f for f in risk_flags if tiers[f] == "strict"]
 
     def decide(decision, rule, reasons):
         return {
@@ -178,6 +197,7 @@ def evaluate(reviews, revision, plan_risk_flags, policy, load_problems=()):
             "blockers": blockers,
             "issues": issues,
             "risk_flags": risk_flags,
+            "risk_flag_tiers": tiers,
             "unknown_risk_flags": unknown_flags,
         }
 
@@ -192,14 +212,25 @@ def evaluate(reviews, revision, plan_risk_flags, policy, load_problems=()):
                       [f"{len(providers)} providers, policy needs {policy['min_providers']}"])
     if blockers:
         return decide("escalate", "blockers", [f"{len(blockers)} Blocker(s) need the owner"])
-    if risk_flags:
-        return decide("escalate", "risk-flags", [f"Risk flag: {f}" for f in risk_flags])
-    # Rule 2: a strong, consistent, unanimous round.
+    if escalating:
+        return decide("escalate", "risk-flags", [f"Risk flag: {f}" for f in escalating])
+    # Rule 2: a strong, consistent, unanimous round; with strict-tier flags, every risk score
+    # must also reach the strict bar, and a round that misses only that goes to the owner,
+    # since every reviewer already approved and a revision has nothing to fix.
     bar = policy["implement"]
     if (average >= bar["min_average"] and lowest >= bar["min_lowest"]
             and spread <= bar["max_spread"] and all(s["verdict"] == "approve" for s in summaries)):
-        return decide("implement", "meets-bar",
-                      [f"Plan score {average}, lowest {lowest}, spread {spread}, all approve"])
+        reasons = [f"Plan score {average}, lowest {lowest}, spread {spread}, all approve"]
+        if not strict:
+            return decide("implement", "meets-bar", reasons)
+        floor = policy["strict"]["min_risk_score"]
+        low = [f"{r.get('reviewer', '?')} scored risk {r['scores']['risk']}, strict bar is {floor}"
+               for r in reviews if r["scores"]["risk"] < floor]
+        if low:
+            return decide("escalate", "strict-risk-flags",
+                          [f"Strict Risk flag: {f}" for f in strict] + low)
+        return decide("implement", "meets-strict-bar",
+                      reasons + [f"Strict Risk flag: {f}, every risk score at least {floor}" for f in strict])
 
     # Rule 3: too weak to revise, or out of revisions.
     if average < policy["escalate_below_average"]:

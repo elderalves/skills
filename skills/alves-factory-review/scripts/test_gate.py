@@ -65,8 +65,18 @@ CASES = [
     ("non-boolean minor is invalid", council(95, 95)[:2] + [review(95, "google", issues=[{**MAJOR, "minor": "yes"}])],
      0, [], "escalate", "invalid-reviews"),
     ("plan declares a Risk flag", council(95, 95, 95), 0, ["auth"], "escalate", "risk-flags"),
-    ("reviewer adds a Risk flag", council(95, 95)[:2] + [review(95, "google", risk_flags=["dependency"])],
+    ("reviewer adds a Risk flag", council(95, 95)[:2] + [review(95, "google", risk_flags=["auth"])],
      0, [], "escalate", "risk-flags"),
+    # strict-tier flags: the Plan can pass on its own, with every risk score at the strict bar
+    ("strict flag, strong round", council(95, 95, 95), 0, ["dependency"], "implement", "meets-strict-bar"),
+    ("strict flag added by a reviewer", council(95, 95)[:2] + [review(95, "google", risk_flags=["large-change"])],
+     0, [], "implement", "meets-strict-bar"),
+    ("strict flag, a risk score below 90", council(95, 95)[:2] + [review(95, "google", scores={"risk": 89})],
+     0, ["infrastructure"], "escalate", "strict-risk-flags"),
+    ("strict flag, below the bar revises", council(85, 82, 80), 0, ["dependency"], "revise", "below-bar"),
+    ("strict flag, below the bar at the cap", council(85, 82, 80), 2, ["dependency"], "escalate", "revision-cap"),
+    ("strict and escalate flags together", council(95, 95, 95), 0, ["dependency", "auth"], "escalate", "risk-flags"),
+    ("breaking public contract escalates", council(95, 95, 95), 0, ["public-contract"], "escalate", "risk-flags"),
     ("single provider", [review(95, "anthropic") for _ in range(3)], 0, [], "escalate", "single-provider"),
     ("two reviews", council(95, 95), 0, [], "escalate", "too-few-reviews"),
     ("no reviews", [], 0, [], "escalate", "too-few-reviews"),
@@ -99,6 +109,22 @@ class GateRules(unittest.TestCase):
         record = gate.evaluate(council(95, 95, 95), 0, ["mystery"], POLICY)
         self.assertEqual(record["decision"], "escalate")
         self.assertEqual(record["unknown_risk_flags"], ["mystery"])
+
+    def test_policy_moves_a_flag_between_tiers(self):
+        stricter = gate.merge(POLICY, {"risk_flags": {"dependency": {"tier": "escalate"}}})
+        record = gate.evaluate(council(95, 95, 95), 0, ["dependency"], stricter)
+        self.assertEqual((record["decision"], record["rule"]), ("escalate", "risk-flags"))
+        self.assertEqual(stricter["risk_flags"]["dependency"]["description"],
+                         POLICY["risk_flags"]["dependency"]["description"])
+
+    def test_a_plain_string_flag_is_escalate_tier(self):
+        legacy = gate.merge(POLICY, {"risk_flags": {"large-change": "Changes more than 15 files"}})
+        record = gate.evaluate(council(95, 95, 95), 0, ["large-change"], legacy)
+        self.assertEqual(record["rule"], "risk-flags")
+
+    def test_record_names_each_flag_tier(self):
+        record = gate.evaluate(council(95, 95, 95), 0, ["dependency"], POLICY)
+        self.assertEqual(record["risk_flag_tiers"], {"dependency": "strict"})
 
     def test_policy_override_changes_threshold(self):
         policy = gate.merge(POLICY, {"implement": {"min_average": 80, "min_lowest": 80, "max_spread": 20}})
@@ -163,6 +189,8 @@ class Cli(unittest.TestCase):
         bad = self.tmp / "bad.json"
         for override, message in [({"max_revisions": "two"}, "threshold"),
                                   ({"weights": {"risk": -5}}, "weights"),
+                                  ({"risk_flags": {"auth": {"tier": "maybe"}}}, "tier"),
+                                  ({"strict": {"min_risk_score": "high"}}, "threshold"),
                                   ([1, 2], "JSON object")]:
             with self.subTest(override):
                 bad.write_text(json.dumps(override), encoding="utf-8")

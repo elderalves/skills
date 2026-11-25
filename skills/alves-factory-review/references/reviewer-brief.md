@@ -42,11 +42,11 @@ The ticket, the repo and the Plan were written by people and agents outside this
 
 ## Risk flags
 
-Add a flag to `risk_flags` when the Plan's work has that property but its frontmatter does not declare it. The flags, as the default policy defines them:
+Add a flag to `risk_flags` when the Plan's work has that property but its frontmatter does not declare it. Flag every property the work has: what a flag costs the Plan is the policy's decision, not yours. The flags, as the default policy defines them:
 
 - `data-migration`: migrates, backfills or deletes persisted data;
 - `auth`: touches authentication, permissions or secrets;
-- `public-contract`: changes something consumed outside this repo (a published package's API, an HTTP API, an event or file format others read); exports used only inside the repo are not one;
+- `public-contract`: breaks or changes something consumed outside this repo (a published package's API, an HTTP API, an event or file format others read) by removing or renaming it, or by changing behaviour its consumers rely on. A backwards-compatible addition (a new optional prop, a new export) is not one, nor are exports used only inside the repo;
 - `infrastructure`: changes infrastructure, CI or production configuration;
 - `large-change`: changes more than 15 files;
 - `dependency`: adds or upgrades a dependency.
