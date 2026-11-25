@@ -19,7 +19,7 @@
   "risk_flags": {
     "data-migration": "Migrates, backfills or deletes persisted data",
     "auth": "Touches authentication, permissions or secrets",
-    "public-contract": "Breaks a public API, event, schema or other contract",
+    "public-contract": "Changes something consumed outside this repo: a published package API, an HTTP API, an event or a file format others read",
     "infrastructure": "Changes infrastructure, CI or production configuration",
     "large-change": "Changes more than 15 files",
     "dependency": "Adds or upgrades a dependency"

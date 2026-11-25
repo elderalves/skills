@@ -110,6 +110,20 @@ def validate_review(review, weights):
     for field in ("blockers", "issues", "risk_flags"):
         if not isinstance(review.get(field, []), list):
             problems.append(f"{name}: {field} must be a list")
+    if problems:
+        return problems
+    issues, blockers = review.get("issues", []), review.get("blockers", [])
+    if any(not isinstance(i, dict) or not isinstance(i.get("minor", False), bool) for i in issues):
+        problems.append(f"{name}: each issue must be an object whose minor field, when present, is true or false")
+        return problems
+    major = [i for i in issues if not i.get("minor", False)]
+    verdict = review["verdict"]
+    if verdict == "approve" and (major or blockers):
+        problems.append(f"{name}: approve allows only minor issues and no blockers")
+    if verdict == "revise" and not major:
+        problems.append(f"{name}: revise needs at least one issue that is not minor")
+    if verdict == "escalate" and not blockers:
+        problems.append(f"{name}: escalate needs at least one blocker")
     return problems
 
 
@@ -180,10 +194,6 @@ def evaluate(reviews, revision, plan_risk_flags, policy, load_problems=()):
         return decide("escalate", "blockers", [f"{len(blockers)} Blocker(s) need the owner"])
     if risk_flags:
         return decide("escalate", "risk-flags", [f"Risk flag: {f}" for f in risk_flags])
-    escalating = [s["reviewer"] for s in summaries if s["verdict"] == "escalate"]
-    if escalating:
-        return decide("escalate", "reviewer-escalated", [f"{r} voted escalate" for r in escalating])
-
     # Rule 2: a strong, consistent, unanimous round.
     bar = policy["implement"]
     if (average >= bar["min_average"] and lowest >= bar["min_lowest"]
@@ -208,15 +218,29 @@ def evaluate(reviews, revision, plan_risk_flags, policy, load_problems=()):
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Apply the factory policy to one Council round.")
     parser.add_argument("reviews_dir", type=Path)
-    parser.add_argument("--revision", type=int, required=True,
+    parser.add_argument("--revision", type=int,
                         help="0 for the first Plan, 1 after the first Revise, and so on")
     parser.add_argument("--risk-flag", action="append", default=[], dest="risk_flags",
                         help="a Risk flag the Plan declares; repeat for several")
     parser.add_argument("--policy", action="append", default=[],
                         help="a policy override file; repeat to layer several")
     parser.add_argument("--out", type=Path)
+    parser.add_argument("--check", action="store_true",
+                        help="only validate the reviews: print each problem, exit 1 when there is any")
     args = parser.parse_args(argv)
 
+    if args.check:
+        if not args.reviews_dir.is_dir():
+            parser.error(f"{args.reviews_dir} is not a directory")
+        weights = load_policy(args.policy)["weights"]
+        reviews, problems = load_reviews(args.reviews_dir)
+        for review in reviews:
+            problems.extend(validate_review(review, weights))
+        print("\n".join(problems) or "ok")
+        return 1 if problems else 0
+
+    if args.revision is None:
+        parser.error("--revision is required unless --check is given")
     if args.revision < 0:
         parser.error("--revision must be 0 or more")
     if not args.reviews_dir.is_dir():

@@ -12,6 +12,15 @@ Every open question the ticket leaves falls in exactly one class:
 
 Owner answers in `ticket.md` settle the questions they answer; follow them even where you would have chosen differently.
 
+## Scope
+
+How much work the ticket asks for is a question like any other, and the same classes settle it:
+
+- **Leaving out optional work** the ticket does not require (wiring a new module into the app, a follow-up refactor) is a **reversible decision**: list it under **Out of scope** with the reason, and in `ASSUMPTIONS.md`.
+- **Adding work** the ticket does not ask for is invented scope: leave it out, or justify it with ticket text or the parent ticket's stated decisions.
+- **A Blocker** is a product choice the ticket cannot be called done without, never a question of how much to build.
+- **The parent ticket** is context only: it explains why the work exists and which decisions to respect, and its scope is not this ticket's scope.
+
 ## Examples
 
 - Which test framework, where the new file goes, what a private function is called: **reversible**, follow the repo.

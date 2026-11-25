@@ -32,4 +32,6 @@ The Plan names what could go wrong and how to undo it, declares every Risk flag 
 | 50–69 | Significant parts missing or wrong. |
 | 0–49 | The criterion is unmet or the Plan contradicts the repo or ticket. |
 
-Anchor each score to a band and write one sentence of evidence for it in `rationale`. A score below 85 needs at least one Issue or Blocker under that criterion.
+Anchor each score to a band and write one to three sentences of evidence for it in `rationale`. A score below 85 needs at least one major Issue or a Blocker under that criterion.
+
+**Verdict from scores.** Vote `approve` when every criterion scores 85 or more and every Issue is minor; `revise` when any criterion is below 85 or any Issue is major; `escalate` when you raised a Blocker. Leave the weighted total to the gate.

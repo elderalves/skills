@@ -14,11 +14,18 @@ POLICY = gate.load_policy([])
 PROVIDERS = ["anthropic", "openai", "google"]
 
 
+MAJOR = {"criterion": "testing", "problem": "p", "evidence": "e", "fix": "f"}
+BLOCKER = {"question": "Q?", "why_owner": "w", "evidence": "e"}
+
+
 def review(score=95, provider="anthropic", verdict="approve", **fields):
+    """A review consistent with its verdict unless fields say otherwise."""
     scores = {criterion: score for criterion in POLICY["weights"]}
     scores.update(fields.pop("scores", {}))
+    defaults = {"blockers": [BLOCKER] if verdict == "escalate" else [],
+                "issues": [MAJOR] if verdict == "revise" else []}
     return {"reviewer": f"{provider}-reviewer", "provider": provider, "verdict": verdict,
-            "scores": scores, "blockers": [], "issues": [], "risk_flags": [], **fields}
+            "scores": scores, "risk_flags": [], **defaults, **fields}
 
 
 def council(*scores, verdicts=None, **fields):
@@ -41,11 +48,22 @@ CASES = [
     ("strong round at the cap still implements", council(95, 95, 95), 2, [], "implement", "meets-bar"),
     ("weak round", council(70, 72, 74), 0, [], "escalate", "score-too-low"),
     ("a reviewer escalates", council(95, 95, 95, verdicts=["approve", "approve", "escalate"]),
-     0, [], "escalate", "reviewer-escalated"),
-    ("a Blocker", council(95, 95, 95)[:2] + [review(95, "google", blockers=[{"question": "Q?"}])],
      0, [], "escalate", "blockers"),
-    ("Issues alone never escalate", council(85, 85, 85, issues=[{"issue": "x"}]),
+    ("a Blocker", council(95, 95)[:2] + [review(95, "google", "escalate")],
+     0, [], "escalate", "blockers"),
+    ("Issues alone never escalate", council(85, 85, 85, verdicts=["revise"] * 3),
      0, [], "revise", "below-bar"),
+    ("approve with minor Issues implements", council(95, 95, 95, issues=[{**MAJOR, "minor": True}]),
+     0, [], "implement", "meets-bar"),
+    ("approve with a major Issue is invalid", council(95, 95)[:2] + [review(95, "google", issues=[MAJOR])],
+     0, [], "escalate", "invalid-reviews"),
+    ("revise with only minor Issues is invalid",
+     council(95, 95)[:2] + [review(95, "google", "revise", issues=[{**MAJOR, "minor": True}])],
+     0, [], "escalate", "invalid-reviews"),
+    ("escalate without a Blocker is invalid", council(95, 95)[:2] + [review(95, "google", "escalate", blockers=[])],
+     0, [], "escalate", "invalid-reviews"),
+    ("non-boolean minor is invalid", council(95, 95)[:2] + [review(95, "google", issues=[{**MAJOR, "minor": "yes"}])],
+     0, [], "escalate", "invalid-reviews"),
     ("plan declares a Risk flag", council(95, 95, 95), 0, ["auth"], "escalate", "risk-flags"),
     ("reviewer adds a Risk flag", council(95, 95)[:2] + [review(95, "google", risk_flags=["dependency"])],
      0, [], "escalate", "risk-flags"),
@@ -126,6 +144,20 @@ class Cli(unittest.TestCase):
         self.assertEqual(self.run_gate("--revision", "0", "--policy", str(loose))[1], "implement")
         self.assertEqual(self.run_gate("--revision", "0", "--policy", str(loose), "--policy", str(strict))[1],
                          "revise")
+
+    def test_check_mode_validates_without_deciding(self):
+        self.write_reviews(council(95, 95, 95))
+        self.assertEqual(self.run_gate("--check")[:2], (0, "ok"))
+        self.assertFalse((self.tmp / "decision.json").exists())
+        self.write_reviews([review(95, "openai", "revise", issues=[])])
+        code, out, _ = self.run_gate("--check")
+        self.assertEqual(code, 1)
+        self.assertIn("revise needs", out)
+
+    def test_decision_mode_requires_revision(self):
+        self.write_reviews(council(95, 95, 95))
+        with self.assertRaises(SystemExit):
+            self.run_gate()
 
     def test_broken_policy_exits_2(self):
         bad = self.tmp / "bad.json"

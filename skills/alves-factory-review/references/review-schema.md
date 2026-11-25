@@ -30,7 +30,8 @@ The exact shape of one reviewer's output file. `gate.py` rejects a round with a 
       "criterion": "architecture",
       "problem": "Task 2 duplicates the existing retry helper.",
       "evidence": "src/http/retry.ts exports withRetry(fn, opts), used by 6 callers.",
-      "fix": "Reuse withRetry and add the new backoff option there."
+      "fix": "Reuse withRetry and add the new backoff option there.",
+      "minor": false
     }
   ],
   "risk_flags": [],
@@ -44,12 +45,12 @@ The exact shape of one reviewer's output file. `gate.py` rejects a round with a 
 - `provider`: the provider of the model that wrote this review, in lowercase (`anthropic`, `openai`, `google`). Record the real provider, even when it substitutes for the lens's preferred one: the gate counts distinct providers.
 - `model`: the model id that wrote this review.
 - `scores`: an integer from 0 to 100 for every criterion key in the [rubric](rubric.md), no more and no fewer.
-- `rationale`: one sentence of checked evidence per criterion.
-- `verdict`:
-  - `approve`: implementable as written; `issues` may hold only minor polish and `blockers` is empty.
-  - `revise`: the planner can fix every problem; at least one Issue.
+- `rationale`: one to three sentences of checked evidence per criterion.
+- `verdict`, which `gate.py` checks against the lists below:
+  - `approve`: implementable as written; every Issue is minor and `blockers` is empty.
+  - `revise`: the planner can fix every problem; at least one Issue is not minor.
   - `escalate`: at least one Blocker.
 - `blockers`: each `{question, why_owner, evidence}`. `question` is answerable by the owner in one reply; `why_owner` says why investigation cannot settle it.
-- `issues`: each `{criterion, problem, evidence, fix}`. `criterion` is a rubric key; `evidence` quotes or cites a file and line, the ticket, or the Plan.
+- `issues`: each `{criterion, problem, evidence, fix, minor}`. `criterion` is a rubric key; `evidence` quotes or cites a file and line, the ticket, or the Plan; for something the Plan leaves out, cite the Plan section where it belongs and the ticket text or code that calls for it. `minor` is `true` when the fix would not change what gets built or how it is verified, per the [reviewer brief](reviewer-brief.md#blockers-and-issues).
 - `risk_flags`: flags from the policy's list that the work carries but `PLAN.md` does not declare.
 - `previous_issues`: on a revision, one `{issue, resolved, note}` per Issue in the previous `decision.json`; otherwise empty.

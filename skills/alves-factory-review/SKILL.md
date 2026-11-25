@@ -4,7 +4,7 @@ description: Stage of alves-factory-run. Run one Council round on a factory Plan
 argument-hint: <work-dir> --revision <N> [--policy <file> ...]
 ---
 
-Run one **Council round** on the Plan in a factory work dir and return its **Gate decision**: `implement`, `revise` or `escalate`. Reviewers judge; `scripts/gate.py` decides. Terms follow the factory glossary (`docs/factory/GLOSSARY.md` in the skills repo).
+Run one **Council round** on the Plan in a factory work dir and return its **Gate decision**: `implement`, `revise` or `escalate`. Reviewers judge; `scripts/gate.py` decides. Terms follow the factory glossary (`~/.agents/docs/factory/GLOSSARY.md`).
 
 ## Inputs
 
@@ -37,7 +37,7 @@ The Plan's declared Risk flags are the `risk_flags` list in `PLAN.md`'s YAML fro
 
 3. **Dispatch all three in parallel.** Each reviewer's prompt is, in order: [references/reviewer-brief.md](references/reviewer-brief.md), its mandate file, then the absolute paths of the work dir, the repo, its output file `round-<N>/reviews/<lens>.json`, and (when `N > 0`) the previous `decision.json`. Wait for all three to finish.
 
-4. **Check each review** against [references/review-schema.md](references/review-schema.md). Re-dispatch a reviewer once, with the schema problem quoted, when its file is missing or malformed. A reviewer that fails twice keeps no file; record why for the summary.
+4. **Check each review** with `python <skill-dir>/scripts/gate.py <work-dir>/round-<N>/reviews --check`, which validates every file against [references/review-schema.md](references/review-schema.md) (including that each verdict matches its Issues and Blockers) and prints `ok` or one problem per line. Re-dispatch a reviewer once, with its problems quoted, when its file is missing or has problems. A reviewer that fails twice keeps no file; record why for the summary.
 
 5. **Apply the gate.**
 
@@ -51,7 +51,7 @@ The Plan's declared Risk flags are the `risk_flags` list in `PLAN.md`'s YAML fro
    - a score table: one row per reviewer (lens, provider and model, weighted score, verdict), then the Plan score, lowest score and spread from `decision.json`;
    - the Gate decision and the rule that fired, with its reasons;
    - every Blocker as a question the owner can answer, with its evidence;
-   - every Issue, grouped by criterion, with the suggested fix;
+   - every Issue, grouped by criterion, with the suggested fix, major Issues before minor ones;
    - substitutions and failed reviewers from steps 2 and 4.
 
-**Done when** `round-<N>/decision.json` and `round-<N>/summary.md` exist (or the round stopped as `blocked`), and you have returned to the caller the decision, the rule, and both paths.
+**Done when** `round-<N>/decision.json` and `round-<N>/summary.md` exist (or the round stopped as `blocked`), and you have returned to the caller a final line of JSON: `{"decision": ..., "rule": ..., "decision_path": ..., "summary_path": ...}`, with `"decision": "blocked"` and an `"error"` when the round stopped.

@@ -4,7 +4,7 @@ description: Planning run of the alves factory. Take an Upstream ticket (or a Fa
 argument-hint: <upstream-ref | factory-ticket> [--dry-run] [--pasted <file>]
 ---
 
-Run one **planning run**: from an Upstream ticket to a Gate decision, with no human in the loop. The run ends in exactly one of **Plan Approved**, **Needs Human** or **Blocked**, and never waits: the owner's later change on the Factory ticket starts a new run. Terms follow the factory glossary (`docs/factory/GLOSSARY.md` in the skills repo).
+Run one **planning run**: from an Upstream ticket to a Gate decision, with no human in the loop. The run ends in exactly one of **Plan Approved**, **Needs Human** or **Blocked**, and never waits: the owner's later change on the Factory ticket starts a new run. Terms follow the factory glossary (`~/.agents/docs/factory/GLOSSARY.md`).
 
 ## Arguments
 
