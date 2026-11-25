@@ -26,6 +26,14 @@ _Avoid_: internal ticket, Linear-only ticket, self-ticket
 
 ## Plans and review
 
+**Triage**:
+The factory's first look at an Upstream ticket assigned to the owner: deciding, before any planning, whether it holds implementation work for a configured repo.
+_Avoid_: screening, intake
+
+**Triage decision**:
+The outcome of Triage: Work (planning starts), Unsure (the Factory ticket waits in Backlog for the owner) or Not work (nothing is recorded).
+_Avoid_: verdict, classification
+
 **Plan**:
 The factory's proposal for how to carry out one Upstream ticket, revised until a Gate decision lets it be implemented or escalated.
 _Avoid_: spec, design, proposal

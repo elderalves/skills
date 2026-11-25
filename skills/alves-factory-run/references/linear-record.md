@@ -1,6 +1,6 @@
 # The factory's record on Linear
 
-The Factory ticket on Linear is the factory's only durable record (ADR `docs/factory/adr/0001` in the skills repo): every run rebuilds its state from it. All reads and writes go through [`scripts/linear.py`](../scripts/linear.py); shared by `alves-factory-run` and `alves-factory-implement`.
+The Factory ticket on Linear is the factory's only durable record (ADR `docs/factory/adr/0001` in the skills repo): every run rebuilds its state from it. All reads and writes go through [`scripts/linear.py`](../scripts/linear.py); shared by `alves-factory-run`, `alves-factory-implement` and `alves-factory-triage`.
 
 ## The Factory ticket
 
@@ -18,7 +18,7 @@ The team's statuses, by exact name, and who sets each:
 
 | Status | Set by | Meaning |
 |---|---|---|
-| Backlog | owner | not ready for the factory |
+| Backlog | owner, or triage | not ready for the factory; triage parks an **unsure** ticket here |
 | **Ready** | owner | trigger: start (or restart) a planning run |
 | Planning | planning run | the planner owns the ticket |
 | Plan Review | planning run | a Council round is running |
@@ -72,6 +72,18 @@ or move it to **Plan Approved** to implement the current Plan as it stands.
 ```
 
 **Blocked comment**: the step that failed, the exact error, and what would unblock it.
+
+**Triage comment**, on a ticket triage parked in Backlog:
+
+```markdown
+[alves-factory]
+
+## Triage: unsure
+
+<the reason, citing the ticket text and the repo evidence on each side>
+
+**To continue:** move the ticket to **Ready** to plan it, or to **Canceled** if it holds no work for this repo.
+```
 
 ## Owner answers
 
