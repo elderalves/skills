@@ -24,6 +24,16 @@ Run one **implementation run**: from an approved Plan to a draft PR. The run end
 - Any failure the steps do not handle ends the run **Blocked** (step 9).
 - However the run ends (In Review, Blocked, or a dry run's stop), it leaves the checkout clean and on its **starting branch** (step 4), keeping the factory branch: the owner's or the trigger's checkout is as it was found.
 
+## Commit messages
+
+The repo's convention wins. Before the first commit, look for one it enforces: a commitlint config (`commitlint.config.*`, `.commitlintrc*`, a `commitlint` key in `package.json`), a `commit-msg` hook, or a rule in `AGENTS.md`, `CLAUDE.md` or `CONTRIBUTING.md`.
+
+- **Conventional Commits** (commitlint's `config-conventional`, or a rule naming it): `<type>(<upstream-ref>): task <N>: <task name>` for a task and `fix(<upstream-ref>): <what>` for a branch fix. `<type>` is the allowed type that fits what the task does: `feat` for new behaviour, `fix` for a bug, `refactor`, `test`, `docs`, `chore`. Keep the ref's case when the config allows upper-case scopes; otherwise lower-case it.
+- **Another convention:** follow it, keeping the ref and `task <N>` in the header.
+- **None:** `<upstream-ref>: task <N>: <task name>` and `<upstream-ref>: fix: <what>`.
+
+Every format keeps `task <N>` in the header, since step 4 recognises finished tasks by it. When a hook rejects a commit, reword it to the rule the hook printed; the hooks always run (no `--no-verify`).
+
 ## Process
 
 1. **Resolve.** Read the Factory ticket with `linear.py get` (find it with `find-by-url` when given an upstream ref) and take the upstream ref from its Upstream link per [linear-record.md](../alves-factory-run/references/linear-record.md); a Native ticket (no Upstream link, in a Linear project a `linear-project:` entry matches) is its own upstream ref. Match the project per [config.md](../alves-factory-run/references/config.md). The work dir is the planning run's `~/.factory/runs/<upstream-ref>/`; this run writes under its `implementation/` subdirectory. Resolve the run's GitHub account per [config.md](../alves-factory-run/references/config.md#github-account); every network git and gh command below (fetch, push, `gh pr …`) runs with that account's `GH_TOKEN`.
@@ -39,11 +49,11 @@ Run one **implementation run**: from an approved Plan to a draft PR. The run end
 5. **Implement each task in order.** First install what **Global Constraints** says to install and run the repo's checks once as a baseline: a red baseline stops the run Blocked, since no task's result could be read against it. Then, for each remaining task, dispatch a fresh subagent with [references/implementer-brief.md](references/implementer-brief.md) and the inputs it lists, including the task's minor fixes. Then check its work yourself:
    - run the task's verification commands and confirm the expected output;
    - read the diff against the task's **Files** block, steps and minor fixes;
-   - commit as `<upstream-ref>: task <N>: <task name>`, with each deviation and minor fix the task carried listed in the commit body.
+   - commit per **Commit messages**, with each deviation and minor fix the task carried listed in the commit body.
 
    A task whose tests stay red after the subagent and one fix attempt of your own, or that needs a change outside the guardrails, stops the run Blocked with the task number, the failing output and what the Plan got wrong. **Done when** every task has its commit.
 
-6. **Verify the branch.** Run the repo's full checks as its own config defines them (test, lint, typecheck and build scripts in `package.json`, `Makefile`, CI workflows or the repo's `AGENTS.md`). Fix what the change broke, committing each fix as `<upstream-ref>: fix: <what>`. Write `implementation/verification.md`: every command, its result, every recorded deviation, and every minor fix applied or skipped. In a dry run, stop here and reply with the branch, the commits and `verification.md`.
+6. **Verify the branch.** Run the repo's full checks as its own config defines them (test, lint, typecheck and build scripts in `package.json`, `Makefile`, CI workflows or the repo's `AGENTS.md`). Fix what the change broke, committing each fix per **Commit messages**. Write `implementation/verification.md`: every command, its result, every recorded deviation, and every minor fix applied or skipped. In a dry run, stop here and reply with the branch, the commits and `verification.md`.
 
 7. **Open the draft PR.** Push the branch and run `gh pr create --draft --base <base_branch> --head <branch>` with a body that a reviewer on the project team can use: the Upstream ticket link, what changed and why (from the Plan's Goal, Architecture and Approach), the tasks, the verification, and the Assumptions worth a reviewer's attention. The body stays free of factory internals: no Linear links, no Council scores. Retried runs update the existing PR rather than opening another (`gh pr view <branch>` finds it). The factory supports GitHub as the git host; any other host stops Blocked after the push.
 
