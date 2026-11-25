@@ -25,13 +25,13 @@ Run one **implementation run**: from an approved Plan to a draft PR. The run end
 
 ## Process
 
-1. **Resolve.** Read the Factory ticket with `linear.py get` (find it with `find-by-url` when given an upstream ref) and take the upstream ref from its Upstream link's title; a Native ticket (no Upstream link, in a Linear project a `linear-project:` entry matches) is its own upstream ref. Match the project per [config.md](../alves-factory-run/references/config.md). The work dir is the planning run's `~/.factory/runs/<upstream-ref>/`; this run writes under its `implementation/` subdirectory.
+1. **Resolve.** Read the Factory ticket with `linear.py get` (find it with `find-by-url` when given an upstream ref) and take the upstream ref from its Upstream link's title; a Native ticket (no Upstream link, in a Linear project a `linear-project:` entry matches) is its own upstream ref. Match the project per [config.md](../alves-factory-run/references/config.md). The work dir is the planning run's `~/.factory/runs/<upstream-ref>/`; this run writes under its `implementation/` subdirectory. Resolve the run's GitHub account per [config.md](../alves-factory-run/references/config.md#github-account); every network git and gh command below (fetch, push, `gh pr …`) runs with that account's `GH_TOKEN`.
 
 2. **Claim.** The ticket must be in **Plan Approved**: In Progress means another run owns it, anything else means no trigger; either way exit with no writes. Set **In Progress**.
 
 3. **Rebuild the Plan.** `linear.py get-doc --title Plan --out <work-dir>/PLAN.md`, and the same for `Assumptions`. Re-read the Upstream ticket into `ticket.md` per [trackers.md](../alves-factory-run/references/trackers.md). A Plan with no tasks (its blocked form) cannot be implemented: stop Blocked, asking the owner to answer its Blockers and move the ticket to Ready.
 
-4. **Branch.** In the project `repo`, with a clean checkout (dirty: stop Blocked), fetch and branch `factory/<upstream-ref slug>` from the latest `base_branch`. When that branch already exists (a retried run), check it out and continue from it: tasks whose commits already exist on it are done.
+4. **Branch.** In the current directory when it is a checkout of the project's repo (T3 Code starts each run in its own worktree), otherwise in the configured `repo`; with a clean checkout (dirty: stop Blocked), fetch and branch `factory/<upstream-ref slug>` from the latest `base_branch`. When that branch already exists (a retried run), check it out and continue from it: tasks whose commits already exist on it are done.
 
 5. **Implement each task in order.** For each remaining task, dispatch a fresh subagent with the Plan's header, **Global Constraints** and **Review Focus**, that one task, the **Interfaces** blocks of the tasks before it, `ASSUMPTIONS.md`, and these instructions: follow the `tdd` skill (failing test first, then the minimal code, then green), run the task's verification commands, and report the result plus any deviation. Then check its work yourself:
    - run the task's verification commands and confirm the expected output;

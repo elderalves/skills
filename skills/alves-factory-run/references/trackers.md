@@ -24,6 +24,7 @@ Assemble the read into `<work-dir>/ticket.md`, the only ticket source the planne
 
 - **Upstream:** <url>
 - **Type / priority / labels:** <as the tracker reports them>
+- **Base commit:** <the run's base commit>
 
 ## Description
 
@@ -31,7 +32,7 @@ Assemble the read into `<work-dir>/ticket.md`, the only ticket source the planne
 
 ## Acceptance criteria
 
-<verbatim when the tracker has a field for them; otherwise "See description.">
+<verbatim, only when the tracker has a separate field for them; otherwise leave this section out>
 
 ## Comments
 
@@ -42,7 +43,14 @@ Assemble the read into `<work-dir>/ticket.md`, the only ticket source the planne
 
 ### <date>
 <each answer the owner gave on the Factory ticket, verbatim, per linear-record.md>
+
+## Parent ticket (context only)
+
+### <PARENT-KEY>: <parent title>
+<the parent's description, verbatim>
 ```
+
+**Parent ticket.** When the ticket has a parent (a Jira parent or epic, a Linear parent issue), read the parent's title and description the same way and append them under **Parent ticket (context only)**; leave the section out when there is none. The parent explains why the work exists and which decisions it must respect; its scope is not this ticket's scope.
 
 For a Native ticket, the owner's comments are both the ticket's discussion and its owner answers: put them all under **Owner answers** and leave **Comments** empty, so nothing appears twice. Factory comments (with the marker) are the factory's record, not ticket content: leave them out.
 

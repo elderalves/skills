@@ -27,7 +27,7 @@ Run one **planning run**: from an Upstream ticket to a Gate decision, with no hu
    - without one, in a Linear project that a `linear-project:` entry matches: it is a **Native ticket**, and its own identifier (`ALV-12`) is the upstream ref;
    - otherwise it is no factory work (an ordinary ticket moved to Ready): exit with no writes.
 
-   Match the upstream ref against `~/.factory/projects.json` per [references/config.md](references/config.md). The **work dir** is `~/.factory/runs/<upstream-ref, with / # : replaced by ->/`; empty it, then create it. Work in the project's `repo`, updated to the latest `base_branch` without touching uncommitted work (when the checkout is dirty, stop Blocked).
+   Match the upstream ref against `~/.factory/projects.json` per [references/config.md](references/config.md). The **work dir** is `~/.factory/runs/<upstream-ref, with / # : replaced by ->/`; empty it, then create it. Work in the current directory when it is a checkout of the project's repo (same `origin`), as the trigger left it: T3 Code starts each run in its own worktree, so never switch its branch. Otherwise use the configured `repo`. Resolve the run's GitHub account per [config.md](references/config.md#github-account) and `git fetch origin <base_branch>` with it, so an unreachable repo stops the run Blocked now rather than at push time. Record the checkout's `git rev-parse HEAD` as the **base commit**.
 
 2. **Claim the Factory ticket.** A Native ticket is its own Factory ticket: skip the lookup and apply only the status rules below. Otherwise `linear.py find-by-url <upstream-url>`:
    - none: `linear.py create` it in the `linear_team` with status Planning, then run `find-by-url` again; if an older ticket now exists, `mark-duplicate` yours `--of` it and exit;
@@ -57,4 +57,4 @@ Run one **planning run**: from an Upstream ticket to a Gate decision, with no hu
 
 7. **Blocked.** Post a comment naming the step, the exact error, and what would unblock it, and set **Blocked**. When the failure happened before step 2 claimed a ticket, report it in the run's final reply only.
 
-**Done when** the Factory ticket is in Plan Approved, Needs Human or Blocked with a factory comment explaining why (or, in a dry run, `record/` holds that final status and comment). Reply with the Factory ticket's URL, the final status and the Gate decision of the last round.
+**Done when** the Factory ticket is in Plan Approved, Needs Human or Blocked with a factory comment explaining why (or, in a dry run, `record/` holds that final status and comment). Reply with the Factory ticket's URL, the final status, the Gate decision of the last round, and the GitHub account when it was `detected` rather than pinned.

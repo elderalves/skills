@@ -33,6 +33,7 @@ ENV_FILE = Path.home() / ".factory" / ".env"
 ISSUE_FIELDS = """
   id identifier title description url createdAt
   project { id name }
+  parent { identifier title description }
   state { id name type }
   team { id name key }
   labels { nodes { id name } }
