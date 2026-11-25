@@ -1,0 +1,25 @@
+{
+  "linear_team": "Alves",
+  "projects": [
+    {
+      "match": "PROJ-",
+      "repo": "C:/code/proj",
+      "base_branch": "main",
+      "upstream": { "type": "jira", "site": "example.atlassian.net" },
+      "github_account": "my-work-account"
+    },
+    {
+      "match": "linear-project:My Side Project",
+      "repo": "C:/code/side-project",
+      "base_branch": "main",
+      "upstream": { "type": "linear" }
+    },
+    {
+      "match": "github:acme/widgets#",
+      "repo": "C:/code/widgets",
+      "base_branch": "main",
+      "upstream": { "type": "github" },
+      "policy": "~/.factory/policies/widgets.json"
+    }
+  ]
+}
