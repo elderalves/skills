@@ -6,6 +6,7 @@
       "repo": "C:/code/proj",
       "base_branch": "main",
       "upstream": { "type": "jira", "site": "example.atlassian.net" },
+      "linear_project": "Proj",
       "github_account": "my-work-account"
     },
     {
@@ -19,6 +20,7 @@
       "repo": "C:/code/widgets",
       "base_branch": "main",
       "upstream": { "type": "github" },
+      "linear_project": "Widgets",
       "policy": "~/.factory/policies/widgets.json"
     }
   ]

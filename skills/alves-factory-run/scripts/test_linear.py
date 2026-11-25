@@ -43,6 +43,26 @@ class LinearTests(unittest.TestCase):
             {"issue": newer}, {"issue": older}, {"issue": newer}]}}})
         self.assertEqual([i["identifier"] for i in Linear(fake).find_by_url("u")], ["ALV-1", "ALV-2"])
 
+    def create_fake(self, projects):
+        return Fake({
+            "teams(": {"teams": {"nodes": [{"id": "team1", "name": "Alves"}]}},
+            "projects(": {"projects": {"nodes": projects}},
+            "issueCreate": {"issueCreate": {"success": True, "issue": {"id": "i1", "identifier": "ALV-1"}}},
+            "attachmentLinkURL": {"attachmentLinkURL": {"success": True}},
+            "issue(id": {"issue": issue()},
+        })
+
+    def test_create_files_the_ticket_in_its_project(self):
+        fake = self.create_fake([{"id": "p1", "name": "Metronome"}])
+        Linear(fake).create("Alves", "t", "https://x/browse/DXPX-1", project="Metronome")
+        self.assertEqual(fake.called("issueCreate")[0]["input"]["projectId"], "p1")
+
+    def test_create_with_unknown_project_writes_nothing(self):
+        fake = self.create_fake([])
+        with self.assertRaises(LinearError):
+            Linear(fake).create("Alves", "t", "https://x/browse/DXPX-1", project="Nope")
+        self.assertEqual(fake.called("issueCreate"), [])
+
     def test_set_label_replaces_same_prefix_only(self):
         fake = Fake({
             "issueLabels(": {"issueLabels": {"nodes": [{"id": "new", "name": "gate:implement", "team": None}]}},

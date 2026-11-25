@@ -5,7 +5,7 @@ LINEAR_ALVES_API_KEY=... line in ~/.factory/.env. Every command prints JSON.
 
     python linear.py find-by-url <upstream-url>
     python linear.py get <issue>
-    python linear.py create --team <name> --title <t> --upstream-url <u> [--upstream-title <t>] [--state <s>] [--description-file <f>]
+    python linear.py create --team <name> --title <t> --upstream-url <u> [--upstream-title <t>] [--state <s>] [--project <name>] [--description-file <f>]
     python linear.py set-state <issue> <state-name>
     python linear.py set-label <issue> <label>          # replaces any label sharing the prefix before ':'
     python linear.py put-doc <issue> --title <t> --file <f>   # creates, or updates the doc with that title
@@ -146,9 +146,20 @@ class Linear:
 
     # Writes
 
-    def create(self, team, title, upstream_url, upstream_title=None, state=None, description=None):
+    def project_id(self, name):
+        projects = self.gql(
+            "query($name: String!) { projects(filter: { name: { eqIgnoreCase: $name } }) { nodes { id name } } }",
+            {"name": name},
+        )["projects"]["nodes"]
+        if not projects:
+            raise LinearError(f"no Linear project named {name!r}")
+        return projects[0]["id"]
+
+    def create(self, team, title, upstream_url, upstream_title=None, state=None, description=None, project=None):
         team_id = self.team_id(team)
         payload = {"teamId": team_id, "title": title}
+        if project:
+            payload["projectId"] = self.project_id(project)
         if description:
             payload["description"] = description
         if state:
@@ -255,6 +266,7 @@ def main(argv=None, linear=None):
     p.add_argument("--upstream-url", required=True)
     p.add_argument("--upstream-title")
     p.add_argument("--state")
+    p.add_argument("--project", help="the Linear project to file the ticket in")
     p.add_argument("--description-file", type=Path)
     p = sub.add_parser("set-state")
     p.add_argument("issue")
@@ -291,7 +303,7 @@ def main(argv=None, linear=None):
         elif args.command == "create":
             description = read(args.description_file) if args.description_file else None
             result = linear.create(args.team, args.title, args.upstream_url, args.upstream_title,
-                                   args.state, description)
+                                   args.state, description, args.project)
         elif args.command == "set-state":
             result = linear.set_state(args.issue, args.state)
         elif args.command == "set-label":

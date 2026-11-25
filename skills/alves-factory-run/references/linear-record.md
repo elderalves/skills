@@ -6,7 +6,8 @@ The Factory ticket on Linear is the factory's only durable record (ADR `docs/fac
 
 - **Title:** `<upstream-ref>: <upstream title>`.
 - **Native tickets** are filed by the owner, so the factory leaves their title and description alone and adds no Upstream link; the rest of this record applies to them unchanged.
-- **Upstream link:** one attachment whose URL is the Upstream ticket's URL and whose title is the **upstream ref** (`PROJ-123`, `github:acme/widgets#12`, or `pasted:<slug>`). The URL is the deduplication key; the title tells a later run which project and Upstream ticket it belongs to.
+- **Upstream link:** one attachment whose URL is the Upstream ticket's URL and whose title is the **upstream ref** (`PROJ-123`, `github:acme/widgets#12`, or `pasted:<slug>`). The URL is the deduplication key.
+- **Reading the upstream ref back.** The owner may file a Factory ticket by hand and attach the Upstream URL, and Linear then titles the attachment itself, so derive the ref from each attachment's **URL**: `https://<site>/browse/<KEY>` gives `<KEY>`, `https://github.com/<owner>/<repo>/issues/<n>` gives `github:<owner>/<repo>#<n>`, `https://factory.invalid/pasted/<stem>` gives `pasted:<stem>`. The Upstream link is the attachment whose derived ref a `projects.json` entry matches; other attachments (designs, docs) are context.
 - **Description:** the Upstream link and the project name, nothing else. The record lives in documents and comments.
 - **Documents:** `Plan` (the current `PLAN.md`) and `Assumptions` (the current `ASSUMPTIONS.md`), updated in place on every revision.
 - **Label:** one `gate:` label, the latest Gate decision: `gate:implement`, `gate:revise` or `gate:escalate`.
