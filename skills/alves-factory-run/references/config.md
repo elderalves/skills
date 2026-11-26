@@ -27,7 +27,7 @@ Maps an Upstream ticket to the project the factory works in. Example: [projects.
   - `match`: a Jira key prefix (`PROJ-`), `github:<owner>/<repo>#` for GitHub Issues, or `linear-project:<Linear project name>` for **Native tickets**. A `linear-project:` entry matches a Factory ticket in that Linear project with no Upstream link; it never matches by prefix.
   - `repo`: absolute path of the project checkout on the runner.
   - `base_branch`: the branch implementation branches start from and PRs target.
-  - `upstream.type`: `jira`, `github` or `linear` (Native tickets), per [trackers.md](trackers.md); `upstream.site` is the Jira site.
+  - `upstream.type`: `jira`, `github` or `linear` (Native tickets), per [trackers.md](trackers.md); `upstream.site` is the Jira site, which `acli` must be signed in to.
   - `linear_project`: the Linear project the factory files this entry's Factory tickets in (`linear.py create --project`), so per-project T3 triggers see them. Native entries leave it out: their `match` names the project.
   - `policy`: optional project policy override, layered over the owner's.
   - `github_account`: optional; the gh account that can reach the repo. See **GitHub account** below.

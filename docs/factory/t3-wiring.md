@@ -104,15 +104,16 @@ Look them up with `linear.py` (or the Linear API) when adding a project.
 | Status **Plan Approved** | `1a0c164a-d9d5-430f-b399-731d770fcddd` |
 | Project **Gerador de Escala** | `d585a739-05e9-4949-ba4b-aeb4274c31e0` |
 | Project **Metronome** | `bf16f71d-7545-4fad-a283-5d123a06ada2` |
+| Project **AgileKit** | `8f981427-92e8-4218-ab04-dcca8be7a0ed` |
 
-Wired so far: Gerador de Escala (A, B; Native, so no C).
+Wired so far: Gerador de Escala (A, B; Native, so no C). Configured, not wired: AgileKit (`PCS-`, Jira on fullsteam.atlassian.net: A, B, C) and Metronome (Jira on gridxissues.atlassian.net, which also needs `acli` signed in there).
 
 ## Prerequisites on the runner
 
 - `LINEAR_ALVES_API_KEY` in the environment T3 Code starts with (restart T3 after setting it), or in `~/.factory/.env`.
 - The five `alves-factory-*` skills visible to the orchestrator model (`~/.claude/skills` junctions to `~/.agents/skills`).
 - The project's `github_account` logged in to `gh`.
-- For a Jira project: the Atlassian connector available to T3's Claude sessions; without it, triage and planning stop at the Jira read with the error.
+- For a Jira project: `acli` signed in to the project's `upstream.site` (`acli jira auth status`). `acli` holds one site for the whole machine, so only the projects on that site can run; a run on another site's project stops with both sites named.
 - For a three-provider Council: OpenAI and a third provider enabled in T3 (Google through Antigravity, which needs the `agy` CLI, or another provider as a substitute).
 
 ## First live test
