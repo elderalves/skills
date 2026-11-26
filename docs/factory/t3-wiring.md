@@ -127,7 +127,7 @@ Look them up with `linear.py` (or the Linear API) when adding a project.
 | Project **Metronome** | `bf16f71d-7545-4fad-a283-5d123a06ada2` |
 | Project **AgileKit** | `8f981427-92e8-4218-ab04-dcca8be7a0ed` |
 
-Wired so far: Gerador de Escala (A, B; Native, so no C). Task E is not wired anywhere yet. Configured, not wired: AgileKit (`PCS-`, Jira on fullsteam.atlassian.net: A, B, C) and Metronome (Jira on gridxissues.atlassian.net, which also needs `acli` signed in there).
+Wired so far: Gerador de Escala (A, B, E; Native, so no C) and AgileKit (`PCS-`, Jira on fullsteam.atlassian.net: A, B, C, E). Configured, not wired: Metronome (Jira on gridxissues.atlassian.net, which also needs `acli` signed in there).
 
 ## Prerequisites on the runner
 
