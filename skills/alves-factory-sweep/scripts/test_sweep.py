@@ -10,6 +10,7 @@ from pathlib import Path
 
 import sweep
 from linear import MARKER
+from test_github_account import PIN_KEY, PINNED, Repo, fake, which
 
 NOW = datetime(2026, 11, 26, 12, 0, tzinfo=timezone.utc)
 LIMITS = dict(sweep.DEFAULT_LIMITS)
@@ -288,6 +289,72 @@ class Apply(unittest.TestCase):
         self.assertEqual(linear.writes, [("comment", "ALV-1"), ("state", "ALV-1", "Ready")])
         self.assertEqual([r["applied"] for r in result], [True, False])
         self.assertEqual(result[1]["why"], "status is now Blocked")
+
+
+class Pins(unittest.TestCase):
+    """Each entry's repo pins its GitHub account, so T3's plain worktree fetch can authenticate."""
+
+    def pins(self, repo, *entries):
+        return sweep.gather_pins(list(entries) or [{**JIRA, "github_account": "work-user"}], repo, which)
+
+    def test_a_repo_with_no_pin_gets_a_pin_action(self):
+        [action], notes = self.pins(Repo())
+        self.assertEqual(notes, [])
+        self.assertEqual({k: action[k] for k in ("kind", "repo", "account", "from_status", "to_status")},
+                         {"kind": "pin_account", "repo": "C:/r", "account": "work-user",
+                          "from_status": None, "to_status": "work-user"})
+        plan = sweep.decide([], NOW, LIMITS, [action])
+        self.assertEqual([a["kind"] for a in plan["actions"]], ["pin_account"])
+
+    def test_a_correct_pin_needs_nothing(self):
+        self.assertEqual(self.pins(Repo(PINNED)), ([], []))
+
+    def test_a_pin_for_another_account_is_replaced(self):
+        [action], _ = self.pins(Repo(PINNED), {**JIRA, "github_account": "personal-user"})
+        self.assertEqual((action["from_status"], action["to_status"]), ("work-user", "personal-user"))
+
+    def test_entries_sharing_a_repo_pin_it_once(self):
+        entry = {**JIRA, "github_account": "work-user"}
+        pins, _ = self.pins(Repo(), entry, {**entry, "match": "AI-", "linear_project": "Other"})
+        self.assertEqual(len(pins), 1)
+
+    def test_entries_sharing_a_repo_with_different_accounts_are_noted_not_pinned(self):
+        entry = {**JIRA, "github_account": "work-user"}
+        pins, [note] = self.pins(Repo(), entry, {**entry, "match": "AI-", "github_account": "personal-user"})
+        self.assertEqual(pins, [])
+        self.assertIn("different github_accounts", note)
+
+    def test_ssh_and_the_owners_own_helper_are_noted_not_pinned(self):
+        for repo, said in ((Repo(remote="git@github.com:me/repo.git"), "SSH"),
+                           (Repo({"credential.helper": ["manager"]}), "did not write")):
+            pins, [note] = self.pins(repo)
+            self.assertEqual(pins, [])
+            self.assertIn(said, note)
+
+    def test_an_entry_with_no_account_pins_the_detected_one_and_says_so(self):
+        repo, accounts = Repo(), fake({"personal-user"})
+
+        def runner(args, env=None, cwd=None):
+            return (accounts if args[:1] == ["gh"] or (env and "GH_TOKEN" in env) else repo)(args, env, cwd)
+        [action], [note] = sweep.gather_pins([JIRA], runner, which)
+        self.assertEqual(action["account"], "personal-user")
+        self.assertIn("detected personal-user, pin it there", note)
+
+    def test_apply_writes_the_pin_and_nothing_on_linear(self):
+        repo, linear = Repo(), FakeLinear()
+        pins, _ = self.pins(repo)
+        [result] = sweep.apply({"actions": pins}, linear, repo, which)
+        self.assertEqual(result, {"kind": "pin_account", "ticket": None, "repo": "C:/r", "from_status": None,
+                                  "to_status": "work-user", "applied": True})
+        self.assertEqual(repo.config[PIN_KEY], ["work-user"])
+        self.assertEqual(linear.writes, [])
+
+    def test_apply_reports_a_pin_that_cannot_reach_the_repo(self):
+        repo = Repo(reachable=False)
+        pins, _ = self.pins(repo)
+        [result] = sweep.apply({"actions": pins}, FakeLinear(), repo, which)
+        self.assertFalse(result["applied"])
+        self.assertIn("still fails", result["why"])
 
 
 class Config(unittest.TestCase):

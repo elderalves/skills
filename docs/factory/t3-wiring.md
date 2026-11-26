@@ -110,7 +110,7 @@ openssl rand -hex 20
 | Field | Value |
 |---|---|
 | Schedule | Interval, every 30 minutes (`everyMs: 1800000`) |
-| Destination | New thread each run, in the `alves-factory` project with no worktree: the sweep starts only triage in its own thread, and planning and implementation through their triggers |
+| Destination | New thread each run, in the `alves-factory` project with no worktree: the sweep starts only triage in its own thread, and planning and implementation through their triggers. In a repo's project with a worktree, T3 fetches that repo before every pass, so the sweep fails whenever that fetch does, the case its Account pin repair exists for |
 
 Prompt, naming the `projects.json` entries it covers by their exact `match` (one prefix may cover several repos' entries; a sweep of Metronome's tracker names `DXPX-` and `AI-`):
 
@@ -143,7 +143,7 @@ Wired so far: Gerador de Escala (A, B, E; Native, so no C) and AgileKit (`PCS-`,
 - The factory home, `~/.alves-factory/` (or `ALVES_FACTORY_HOME`), holding `projects.json` ([factory config](../../skills/alves-factory-run/references/config.md#factory-home)), and every project's checkout at its `repo` (`project.py --match <match>` confirms it).
 - `LINEAR_ALVES_API_KEY` in the environment T3 Code starts with (restart T3 after setting it), or in `~/.alves-factory/.env`.
 - The six `alves-factory-*` skills visible to the orchestrator model (`~/.claude/skills/<skill>` linked to `~/.agents/skills/<skill>`: a junction on Windows, `ln -s` on Linux and macOS).
-- The project's `github_account` logged in to `gh`.
+- The project's `github_account` logged in to `gh`, and pinned in the repo's git config (`github_account.py <repo> --account <github_account> --pin`, [config.md](../../skills/alves-factory-run/references/config.md#account-pin)). Without the pin, a worktree task fails at "Workspace preparation failed … Git could not authenticate with the remote" whenever that account is not gh's active one. The sweep repairs a missing pin on its next pass.
 - For a Jira project: `acli` signed in to the project's `upstream.site` (`acli jira auth status`). `acli` holds one site for the whole machine, so only the projects on that site can run; a run on another site's project stops with both sites named.
 - Enable and authenticate in T3 every connection a Council seat uses. The default Council uses Codex (`gpt-6.2-sol`), Claude (`claude-opus-5-5`) and OpenCode Go Muse Spark 1.3 Contributor (through T3's `opencode` connection). Shared, named and per-project seats and Go billing routing are in [factory config](../../skills/alves-factory-run/references/config.md#council-targets); the optional model floor is in [policy files](../../skills/alves-factory-run/references/config.md#council-fidelity-and-model-floor).
 
