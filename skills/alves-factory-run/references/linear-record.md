@@ -25,7 +25,8 @@ The team's statuses, by exact name, and who sets each:
 | Needs Human | planning run | Escalation: the owner's answer is needed |
 | **Plan Approved** | planning run, or owner | trigger: start an implementation run |
 | In Progress | implementation run | the implementer owns the ticket |
-| In Review | implementation run | the draft PR is open |
+| In Review | implementation run, or promotion run | the draft PR is open, waiting on the owner; the last factory comment says why it stayed a draft |
+| **Team Review** | implementation run, or owner | the PR is ready for the project team; entered from In Review (the owner's move), it triggers a promotion run |
 | Blocked | either run | the run failed; the last factory comment says where and why |
 | Done | owner | after the PR merges |
 | Canceled | owner | dropped |

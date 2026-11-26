@@ -87,3 +87,11 @@ _Avoid_: screenshot plan, visual spec
 **Evidence branch**:
 The orphan branch, beside the factory branch in the project repo, that holds an implementation run's before/after screenshots so the PR body can show them.
 _Avoid_: assets branch, screenshot branch
+
+**Ready check**:
+The scripted test, at the end of an implementation run, of whether the factory may promote its draft PR on its own: every condition must hold, and any failure keeps the draft for the owner.
+_Avoid_: safety check, auto-approve
+
+**Promotion**:
+Marking the factory's draft PR ready for review by the project team, either by the ready check on a project that allows it or by the owner moving the Factory ticket to Team Review.
+_Avoid_: publishing, undrafting, approval

@@ -1,6 +1,6 @@
 # The Factory tracker is the factory's record
 
-Every plan, review, decision and escalation lives on the Factory ticket in the owner's Linear, never in the project's repo or Upstream tracker. Runners are disposable and the factory works in projects it does not own, so each run rebuilds its state from the Factory ticket, and a project receives only the implementation (a draft PR) plus one concluding comment on its Upstream ticket.
+Every plan, review, decision and escalation lives on the Factory ticket in the owner's Linear, never in the project's repo or Upstream tracker. Runners are disposable and the factory works in projects it does not own, so each run rebuilds its state from the Factory ticket, and a project receives only the implementation (a PR) plus one concluding comment on its Upstream ticket.
 
 ## Considered Options
 

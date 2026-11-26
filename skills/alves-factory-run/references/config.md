@@ -33,6 +33,7 @@ Maps an Upstream ticket to the project the factory works in. Example: [projects.
   - `linear_project`: the Linear project the factory files this entry's Factory tickets in (`linear.py create --project`), so per-project T3 triggers see them. Native entries leave it out: their `match` names the project.
   - `policy`: optional project policy override, layered over the owner's.
   - `github_account`: optional; the gh account that can reach the repo. See **GitHub account** below.
+  - `pr_ready`: optional; `draft` (the default) leaves every PR a draft until the owner promotes it, and `auto` lets the implementation run promote it when the ready check passes ([ready-check.md](../../alves-factory-implement/references/ready-check.md)). Only this switch is per project: the ready check's conditions are fixed.
   - `council`: optional; this project's Council seats, as the name of an entry in `councils` or an inline object.
 
 ## Council targets

@@ -1,14 +1,15 @@
 # Wiring the factory into T3 Code
 
-Factory runs start from T3 Code **scheduled tasks** with an **On webhook** schedule. Linear status changes trigger planning and implementation; an Upstream assignment (Jira) triggers triage. T3 filters each delivery, so only the right event starts a thread; the skills' own status checks are the last guard against duplicate runs.
+Factory runs start from T3 Code **scheduled tasks** with an **On webhook** schedule. Linear status changes trigger planning, implementation and promotion; an Upstream assignment (Jira) triggers triage. T3 filters each delivery, so only the right event starts a thread; the skills' own status checks are the last guard against duplicate runs.
 
 | Task | Trigger | Skill | Projects |
 |---|---|---|---|
 | A: "factory: plan" | Linear: ticket enters **Ready** | `alves-factory-run` | every project |
 | B: "factory: implement" | Linear: ticket enters **Plan Approved** | `alves-factory-implement` | every project |
 | C: "factory: triage" | Jira: ticket assigned to the owner | `alves-factory-triage` | projects with a Jira Upstream tracker |
+| D: "factory: promote" | Linear: ticket moves from **In Review** to **Team Review** | `alves-factory-implement --promote` | every project |
 
-Each task belongs to one T3 project (one repo), so a project gets its own A and B, plus C when its work starts in Jira.
+Each task belongs to one T3 project (one repo), so a project gets its own A, B and D, plus C when its work starts in Jira.
 
 ## Shared settings
 
@@ -22,7 +23,7 @@ Each task belongs to one T3 project (one repo), so a project gets its own A and 
 | Model | Claude Opus 5.5, High: the run's orchestrator, which also plans and implements; the Council's seats are separate, started through `delegate_task` |
 | Schedule | On webhook |
 
-## Tasks A and B (Linear)
+## Tasks A, B and D (Linear)
 
 | Field | Value |
 |---|---|
@@ -36,8 +37,9 @@ Filters (all must match):
 |---|---|
 | `body.type` | `Issue` |
 | `body.action` | `update` |
-| `body.data.stateId` | Ready's id (Task A) or Plan Approved's id (Task B) |
+| `body.data.stateId` | Ready's id (Task A), Plan Approved's id (Task B) or Team Review's id (Task D) |
 | `body.data.projectId` | the project's Linear project id |
+| `body.updatedFrom.stateId` | Task D only: In Review's id. Linear sends the previous status here, so the implementation run's own move from In Progress to Team Review starts no promotion |
 
 Task A prompt:
 
@@ -48,7 +50,7 @@ read everything else from Linear with the skill's scripts. Never ask questions:
 finish with the skill's final reply.
 ```
 
-Task B prompt: the same, naming `alves-factory-implement`.
+Task B prompt: the same, naming `alves-factory-implement`. Task D prompt: the same, naming `alves-factory-implement` with `--promote` after the identifier.
 
 Each task needs its own Linear webhook (Linear → Settings → API → Webhooks → New webhook): URL = the task's webhook URL from the T3 task editor (a public URL needs a T3 Connect tunnel), resource type **Issues**, team **Alves**; copy that webhook's **signing secret** into the task.
 
@@ -102,6 +104,8 @@ Look them up with `linear.py` (or the Linear API) when adding a project.
 |---|---|
 | Status **Ready** | `f02c37d4-07e5-4dda-8b09-a27051e50568` |
 | Status **Plan Approved** | `1a0c164a-d9d5-430f-b399-731d770fcddd` |
+| Status **In Review** | `89543c4b-7f58-4ad7-9037-888a8bdef129` |
+| Status **Team Review** | not created yet: add it to the Alves team after In Review, then record its id here |
 | Project **Gerador de Escala** | `d585a739-05e9-4949-ba4b-aeb4274c31e0` |
 | Project **Metronome** | `bf16f71d-7545-4fad-a283-5d123a06ada2` |
 | Project **AgileKit** | `8f981427-92e8-4218-ab04-dcca8be7a0ed` |
@@ -121,4 +125,5 @@ Wired so far: Gerador de Escala (A, B; Native, so no C). Configured, not wired: 
 1. Save the project's tasks and their webhooks (and, for Jira, the automation rule).
 2. **Native:** move a small ticket to **Ready**. **Jira:** assign yourself a small ticket; within a couple of minutes a triage thread starts.
 3. Watch the Factory ticket: Planning → Plan Review → Plan Approved, Needs Human or Blocked, with factory comments explaining each step (or Backlog with a triage comment, for an unsure triage).
-4. Move the ticket (or approve an escalation) to **Plan Approved**; Task B opens the draft PR and ends In Review or Blocked.
+4. Move the ticket (or approve an escalation) to **Plan Approved**; Task B opens the PR and ends in Team Review (promoted by the ready check), In Review (a draft, with the reasons) or Blocked.
+5. For a draft: review it, then move the ticket to **Team Review**; Task D marks the PR ready and posts the Upstream comment.
