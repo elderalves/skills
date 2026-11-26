@@ -16,6 +16,19 @@ A ticket is **work** when it asks for a change that one PR to the matched repo c
 - the Upstream ticket is closed (Done, Resolved, Won't Do, or its tracker's equivalent);
 - the ticket is a container (an epic, or a ticket whose work lives in its subtasks): the subtasks are triaged when they are assigned.
 
+## Choosing the repo
+
+When the ticket's prefix has several candidate repos, judge each from its own evidence, then:
+
+| Evidence | Triage entry | Decision |
+|---|---|---|
+| One candidate holds what the ticket names | that candidate | as the table above says for it |
+| Several candidates each hold part of the change (a frontend change and its endpoint) | the one holding the most of it | **unsure**, naming every repo the work touches: one Factory ticket covers one repo, so the owner decides the split |
+| Several candidates hold what it names and the ticket does not say which (copy shared by two apps) | the likeliest one | **unsure**, naming the alternatives |
+| No candidate holds it | none | **not work** when the ticket names a repo or product outside the candidates, else **unsure** in the likeliest one |
+
+Name the repos you searched in the reason, so a **not work** for an unconfigured repo tells the owner which repo to add.
+
 ## Leaning
 
 The costs are uneven. A wrong **work** costs one planning run whose record the owner sees on Linear; a wrong **not work** drops the ticket silently. So choose **not work** only on clear evidence, and **unsure** whenever you would have to guess. A ticket too vague to plan is still **work** when it plainly concerns this repo: planning turns its open questions into Blockers for the owner.

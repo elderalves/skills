@@ -27,8 +27,8 @@ _Avoid_: internal ticket, Linear-only ticket, self-ticket
 ## Plans and review
 
 **Triage**:
-The factory's first look at an Upstream ticket assigned to the owner: deciding, before any planning, whether it holds implementation work for a configured repo.
-_Avoid_: screening, intake
+The factory's first look at an Upstream ticket assigned to the owner: deciding, before any planning, whether it holds implementation work for a configured repo and, when the ticket's Upstream tracker feeds several repos, which one, from evidence in each repo. Once Triage has chosen, the Factory ticket's project carries that choice for every later stage.
+_Avoid_: screening, intake, routing (alone)
 
 **Triage decision**:
 The outcome of Triage: Work (planning starts), Unsure (the Factory ticket waits in Backlog for the owner) or Not work (nothing is recorded).
@@ -113,3 +113,7 @@ _Avoid_: cron, reconciler, janitor
 **Stale limit**:
 How long a ticket may sit in a running status (Planning, Plan Review, In Progress) with no factory comment before the sweep judges its run dead and restarts it, once.
 _Avoid_: timeout, TTL
+
+**Trigger owner**:
+The one Runner whose scheduled tasks receive a project's triggers: its webhooks point there and its sweep runs there. Any Runner may be able to run a project, but each project has exactly one Trigger owner at a time, so no ticket is acted on twice.
+_Avoid_: main machine, factory machine, the runner (alone)

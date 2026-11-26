@@ -74,17 +74,29 @@ or move it to **Plan Approved** to implement the current Plan as it stands.
 
 **Blocked comment**: the step that failed, the exact error, and what would unblock it.
 
-**Triage comment**, on a ticket triage parked in Backlog:
+**Triage comment**, on a ticket triage filed. For **work**, posted before triage moves the ticket to Ready:
+
+```markdown
+[alves-factory]
+
+## Triage: work
+
+<the reason, citing the ticket text and the repo evidence; with several candidate repos, what each one showed>
+```
+
+For **unsure**, on a ticket triage parked in Backlog:
 
 ```markdown
 [alves-factory]
 
 ## Triage: unsure
 
-<the reason, citing the ticket text and the repo evidence on each side>
+<the reason, citing the ticket text and the repo evidence on each side, and every repo the work touches>
 
-**To continue:** move the ticket to **Ready** to plan it, or to **Canceled** if it holds no work for this repo.
+**To continue:** move the ticket to **Ready** to plan it in this project's repo, first moving it to another repo's Linear project if it belongs there, or to **Canceled** if it holds no work for any repo.
 ```
+
+A Factory ticket's Linear project names its repo: the later stages resolve the project with the upstream ref **and** that Linear project, so moving the ticket to another Linear project moves the work to that project's repo.
 
 ## Owner answers
 

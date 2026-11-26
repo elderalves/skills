@@ -85,14 +85,20 @@ def project_council(config, entry, project_match):
     return f"councils.{chosen}", councils[chosen]
 
 
-def resolve(config, project_match, policy=None, warnings=None):
-    """Merge the Council layers; check them against `policy`; append billing warnings."""
+def resolve(config, project_match, policy=None, warnings=None, linear_project=None):
+    """Merge the Council layers; check them against `policy`; append billing warnings.
+
+    Entries sharing one match are told apart by `linear_project` (compared ignoring case)."""
     projects = config.get("projects")
     if not isinstance(projects, list) or any(not isinstance(p, dict) for p in projects):
         raise ConfigError("projects must be a list of objects")
     matches = [p for p in projects if p.get("match") == project_match]
+    if linear_project is not None:
+        matches = [p for p in matches if isinstance(p.get("linear_project"), str)
+                   and p["linear_project"].casefold() == linear_project.casefold()]
     if len(matches) != 1:
-        raise ConfigError(f"project match {project_match!r} must select exactly one entry; found {len(matches)}")
+        which = f"{project_match!r}" + (f" in Linear project {linear_project!r}" if linear_project else "")
+        raise ConfigError(f"project match {which} must select exactly one entry; found {len(matches)}")
     council = read_object(DEFAULT_COUNCIL)
     sources = {}
     for source, layer in (("defaults", council), ("council", config.get("council", {})),
@@ -132,6 +138,8 @@ def billing_warnings(council, sources):
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Resolve the Council targets for one factory project.")
     parser.add_argument("--project", required=True, help="the selected projects.json entry's exact match value")
+    parser.add_argument("--linear-project",
+                        help="the selected entry's linear_project, when several entries share its match")
     parser.add_argument("--config", type=Path, default=factory_home() / "projects.json")
     parser.add_argument("--policy", action="append", default=[],
                         help="a gate policy layer, as passed to the review; repeat to layer several")
@@ -140,7 +148,7 @@ def main(argv=None):
     try:
         policy = gate.load_policy(args.policy)
         warnings = []
-        result = resolve(read_object(args.config), args.project, policy, warnings)
+        result = resolve(read_object(args.config), args.project, policy, warnings, args.linear_project)
         output = json.dumps(result, indent=2) + "\n"
         if args.out:
             args.out.write_text(output, encoding="utf-8")

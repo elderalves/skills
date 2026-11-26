@@ -13,12 +13,20 @@ writes the actions it decides (to --out, default stdout):
 - block: it died again right after a sweep restart; the owner decides.
 - done: the factory PR merged.
 - note: the factory PR closed without merging (said once; the status is left alone).
-- start-*: a run whose trigger never fired (a ticket waiting in Ready or Plan Approved,
-  triage that decided work but filed nothing, an assigned ticket never triaged). The
-  sweep's caller runs `start` itself; the rest wait in `deferred` for the next pass.
+- retrigger: a ticket waited in Ready or Plan Approved with no run; the sweep moves it out
+  (to Backlog) and back, so the trigger fires again and starts the run in its own repo's
+  T3 project. One per pass, oldest first; the rest wait in `deferred`. When it is still
+  waiting after a retrigger, the trigger is broken: block.
+- start-triage: an assigned Upstream ticket never triaged, or one whose triage filed no
+  Factory ticket. Triage only reads repos, so the sweep's caller runs `start` itself; the
+  rest wait in `deferred` for the next pass.
 
-`apply` makes the restart, block, done and note writes on Linear, skipping any ticket
-whose status changed since `plan` read it. It never starts a run.
+A --project match shared by several entries (one Upstream tracker feeding several repos)
+selects them all: each entry's Factory tickets are read from its own Linear project, and
+the Upstream tracker is searched once for the prefix.
+
+`apply` makes the restart, retrigger, block, done and note writes on Linear, skipping any
+ticket whose status changed since `plan` read it. It never starts a run.
 
 Exit codes: 0 when the plan or apply finished, 1 on an API error, 2 on unusable config.
 """
@@ -54,6 +62,8 @@ REVIEW = {"In Review", "Team Review"}
 SWEPT_STATES = sorted(PLANNING | IMPLEMENTING | set(TRIGGERS) | REVIEW)
 RESTART_TO = {**{s: "Ready" for s in PLANNING}, **{s: "Plan Approved" for s in IMPLEMENTING}}
 RESTARTED = "## Sweep: restarted"
+RETRIGGERED = "## Sweep: retriggered"
+RETRIGGER_VIA = "Backlog"
 CLOSED = "## Sweep: PR closed"
 DECISION_LINE = re.compile(r"\*\*Decision:\*\*\s*(work|unsure|not[ -]work)\b", re.IGNORECASE)
 SITE_LINE = re.compile(r"Site:\s*(\S+)")
@@ -126,6 +136,10 @@ def decide(projects, now, limits):
             actions_for_ticket(t, project, now, limits, actions, starts)
         for u in project.get("upstream", []):
             start_for_upstream(u, project, starts)
+    # A retrigger starts a run as surely as a start does, so it is paced the same way:
+    # one per pass, oldest first, so a trigger outage drains at the runner's pace.
+    retriggers = sorted((a for a in actions if a["kind"] == "retrigger"), key=lambda a: a["since"])
+    actions = [a for a in actions if a["kind"] != "retrigger"] + retriggers[:1]
     starts.sort(key=lambda s: (s["priority"], s["since"] or ""))
     for s in starts:
         del s["priority"]
@@ -134,7 +148,7 @@ def decide(projects, now, limits):
         "limits": limits,
         "actions": actions,
         "start": starts[0] if starts else None,
-        "deferred": starts[1:],
+        "deferred": retriggers[1:] + starts[1:],
     }
 
 
@@ -162,11 +176,18 @@ def actions_for_ticket(t, project, now, limits, actions, starts):
                             "comment": restart_comment(state, idle, to)})
     elif state in TRIGGERS:
         waited = now - entered
-        if waited > timedelta(minutes=limits["dropped_trigger_minutes"]):
-            starts.append({**base, "kind": "start-implement" if state == "Plan Approved" else "start-plan",
-                           "skill": TRIGGERS[state], "argument": t["identifier"], "priority": 0,
-                           "since": t["entered_state_at"] or t["updated_at"],
-                           "reason": f"waiting in {state} for {round(waited.total_seconds() / 60)} min with no run"})
+        if waited <= timedelta(minutes=limits["dropped_trigger_minutes"]):
+            return
+        minutes = round(waited.total_seconds() / 60)
+        if last and factory_heading(last) == RETRIGGERED:
+            actions.append({**base, "kind": "block", "to_status": "Blocked",
+                            "reason": f"still waiting in {state} for {minutes} min after a sweep retrigger",
+                            "comment": trigger_block_comment(state, waited)})
+        else:
+            actions.append({**base, "kind": "retrigger", "via_status": RETRIGGER_VIA, "to_status": state,
+                            "since": t["entered_state_at"] or t["updated_at"],
+                            "reason": f"waiting in {state} for {minutes} min with no run",
+                            "comment": retrigger_comment(state, waited)})
     elif state in REVIEW:
         pr = t.get("pr")
         if not pr:
@@ -188,13 +209,14 @@ def start_for_upstream(u, project, starts):
         return
     base = {"ticket": None, "ref": u["ref"], "project": project["match"], "from_status": None,
             "argument": u["ref"], "since": None}
-    if u["triage"] == "work":
-        starts.append({**base, "kind": "start-plan", "skill": "alves-factory-run", "priority": 1,
-                       "reason": "triage decided work, but no Factory ticket exists"})
+    # Triage files the Factory ticket itself, in the repo it chooses, so a decision that filed
+    # nothing is finished by triaging again; a work decision first, since it was already judged.
+    if u["triage"]:
+        why, priority = f"triage decided {u['triage']}, but no Factory ticket exists", 1
     else:
-        why = "triage decided unsure, but no Factory ticket exists" if u["triage"] else "assigned, never triaged"
-        starts.append({**base, "kind": "start-triage", "skill": "alves-factory-triage", "priority": 2,
-                       "reason": why})
+        why, priority = "assigned, never triaged", 2
+    starts.append({**base, "kind": "start-triage", "skill": "alves-factory-triage", "priority": priority,
+                   "reason": why})
 
 
 # Comments
@@ -210,6 +232,21 @@ def block_comment(state, idle):
             f"**{state}** with no factory activity for {hours(idle)} h. The sweep does not restart a ticket twice "
             "in a row, so it is now **Blocked**.\n\n**To continue:** read the run's T3 thread for the cause, then "
             "move the ticket to **Ready** to re-plan or to **Plan Approved** to implement.")
+
+
+def retrigger_comment(state, waited):
+    return (f"{RETRIGGERED}\n\nThis ticket has waited in **{state}** for {round(waited.total_seconds() / 60)} min "
+            f"and no run started, so its trigger was probably lost. The sweep moved it to **{RETRIGGER_VIA}** and "
+            f"back to **{state}**, which fires the trigger again.\n\n"
+            "If no run starts this time either, the next sweep marks the ticket Blocked.")
+
+
+def trigger_block_comment(state, waited):
+    return ("## Sweep: trigger not firing\n\nThe sweep already moved this ticket back through "
+            f"**{state}**, and it has waited again for {round(waited.total_seconds() / 60)} min with no run. "
+            "The trigger for this project is not firing, so the ticket is now **Blocked**.\n\n"
+            "**To continue:** check this project's Linear webhook and T3 scheduled task (enabled, URL, signing "
+            f"secret, project filter), then move the ticket to **{state}** again.")
 
 
 def done_comment(pr):
@@ -246,16 +283,28 @@ def load_config(path):
     return config, limits
 
 
-def select(config, matches):
+def select(config, matches, notes):
+    """Every entry of each match, repos resolved. A shared match skips an entry whose repo is
+    missing here, with a note; a match left with no entry is unusable config."""
     entries = []
     for match in matches:
-        found = [e for e in config["projects"] if e.get("match") == match]
+        found = [e for e in config["projects"] if isinstance(e, dict) and e.get("match") == match]
         if not found:
             raise ConfigError(f"no projects.json entry has match {match!r}")
-        try:
-            entries.append(project_mod.resolve_entry(found[0]))
-        except project_mod.ProjectError as error:
-            raise ConfigError(str(error)) from error
+        names = [e.get("linear_project") for e in found]
+        if len(found) > 1 and (not all(isinstance(n, str) and n.strip() for n in names)
+                               or len({n.casefold() for n in names}) < len(names)):
+            raise ConfigError(f"entries sharing match {match!r} each need a distinct linear_project; found {names}")
+        resolved, errors = [], []
+        for entry in found:
+            try:
+                resolved.append(project_mod.resolve_entry(entry))
+            except project_mod.ProjectError as error:
+                errors.append((entry.get("linear_project") or match, str(error)))
+        if not resolved or (errors and len(found) == 1):
+            raise ConfigError("; ".join(e for _, e in errors))
+        notes.extend(f"{match} {name}: skipped: {error}" for name, error in errors)
+        entries.extend(resolved)
     return entries
 
 
@@ -315,7 +364,7 @@ def triage_decision(ref, triage_root):
 
 def gather(entries, team, limits, linear, runner=github_account.run, triage_root=TRIAGE_ROOT):
     """Read everything decide needs, for the given entries. Read-only."""
-    notes, projects, listed = [], [], {}
+    notes, projects, listed, searched = [], [], {}, set()
     for entry in entries:
         name = linear_project(entry)
         if name not in listed:
@@ -337,7 +386,8 @@ def gather(entries, team, limits, linear, runner=github_account.run, triage_root
                 notes.append(f"{t['identifier']}: PR not checked: {error}")
 
         upstream = []
-        if entry.get("upstream", {}).get("type") == "jira":
+        if entry.get("upstream", {}).get("type") == "jira" and entry["match"] not in searched:
+            searched.add(entry["match"])
             assigned = jira_assigned(entry, limits["triage_window_days"], runner, notes)
             site = entry["upstream"]["site"]
             for ref in assigned or []:
@@ -361,6 +411,8 @@ def apply(sweep, linear):
             done.append({**action, "applied": False, "why": f"status is now {current}"})
             continue
         linear.comment(action["ticket"], action["comment"])
+        if action.get("via_status"):
+            linear.set_state(action["ticket"], action["via_status"])
         if action["to_status"]:
             linear.set_state(action["ticket"], action["to_status"])
         done.append({**action, "applied": True})
@@ -387,10 +439,11 @@ def main(argv=None, linear=None, runner=github_account.run, triage_root=TRIAGE_R
             result = apply(json.loads(read_text(args.plan_file)), linear)
         else:
             config, limits = load_config(args.config)
-            entries = select(config, args.matches)
+            select_notes = []
+            entries = select(config, args.matches, select_notes)
             now = parse_time(args.now) if args.now else datetime.now(timezone.utc)
             projects, notes = gather(entries, config.get("linear_team", "Alves"), limits, linear, runner, triage_root)
-            result = decide(projects, now, limits) | {"notes": notes}
+            result = decide(projects, now, limits) | {"notes": select_notes + notes}
     except ConfigError as error:
         print(f"error: {error}", file=sys.stderr)
         return 2

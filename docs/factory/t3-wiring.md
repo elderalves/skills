@@ -10,17 +10,19 @@ Factory runs start from T3 Code **scheduled tasks**. Tasks A to D have an **On w
 | D: "factory: promote" | Linear: ticket moves from **In Review** to **Team Review** | `alves-factory-implement --promote` | every project |
 | E: "factory: sweep" | every 30 minutes | `alves-factory-sweep` | every project |
 
-Each task belongs to one T3 project (one repo), so a project gets its own A, B, D and E, plus C when its work starts in Jira.
+A, B and D belong to one repo: each repo's T3 project gets its own, filtered by that repo's Linear project. C and E belong to an Upstream prefix (`PCS-`, `RTP-`), whichever repos it feeds ([ADR 0007](adr/0007-triage-chooses-the-repo.md)): they only read repos and write Linear, so they live in one T3 project named `alves-factory`, rooted at `~/.alves-factory/`, with no worktree. A Native project (no Upstream tracker) has no C, and its E names its `linear-project:` entry.
+
+Each project's tasks run on exactly one machine, its **Trigger owner**: the webhooks point there, and two sweeps of one prefix would act on the same tickets. Different projects may have different Trigger owners.
 
 ## Shared settings
 
 | Field | Value |
 |---|---|
-| Runs on | the machine holding the repo, `~/.alves-factory/` and the skills |
+| Runs on | the project's Trigger owner: the machine holding the repo, `~/.alves-factory/` and the skills |
 | Destination | New thread each run |
-| Project | the T3 project for the repo (e.g. `metronome`) |
-| Workspace | Create a new worktree |
-| Base branch | From `<base_branch>` (remote), as in `~/.alves-factory/projects.json` |
+| Project | A, B, D: the T3 project for the repo (e.g. `metronome`). C, E: `alves-factory` |
+| Workspace | A, B, D: Create a new worktree. C, E: Local (`~/.alves-factory/`, no worktree) |
+| Base branch | A, B, D: From `<base_branch>` (remote), as in `~/.alves-factory/projects.json` |
 | Model | Claude Opus 5.5, High: the run's orchestrator, which also plans and implements; the Council's seats are separate, started through `delegate_task` |
 | Schedule | On webhook (Task E: interval) |
 
@@ -108,16 +110,16 @@ openssl rand -hex 20
 | Field | Value |
 |---|---|
 | Schedule | Interval, every 30 minutes (`everyMs: 1800000`) |
-| Destination | New thread each run, in a new worktree, like the others: the sweep may start one run in its own thread |
+| Destination | New thread each run, in the `alves-factory` project with no worktree: the sweep starts only triage in its own thread, and planning and implementation through their triggers |
 
-Prompt, naming every `projects.json` entry of the task's repo by its exact `match` (Metronome's task names `DXPX-`, `RTP-` and `AI-`):
+Prompt, naming the `projects.json` entries it covers by their exact `match` (one prefix may cover several repos' entries; a sweep of Metronome's tracker names `DXPX-` and `AI-`):
 
 ```
 Use the alves-factory-sweep skill on PCS-.
 A schedule started this run. Never ask questions: finish with the skill's final reply.
 ```
 
-A sweep restarts a dead run by moving its ticket back to Ready or Plan Approved, so Tasks A and B must be wired for the restart to start anything; a sweep that finds the trigger dropped again starts the run itself on its next pass. Check what a sweep would do, with no writes, by running the skill with `--dry-run`.
+A sweep restarts a dead run by moving its ticket back to Ready or Plan Approved, and retriggers a dropped one by moving it to Backlog and back, so Tasks A and B must be wired for either to start anything; a ticket whose trigger drops again after a retrigger goes Blocked, naming the trigger as the cause ([ADR 0003](adr/0003-sweep-restarts-through-the-triggers.md)). Check what a sweep would do, with no writes, by running the skill with `--dry-run`.
 
 ## Ids
 
@@ -132,8 +134,9 @@ Look them up with `linear.py` (or the Linear API) when adding a project.
 | Project **Gerador de Escala** | `d585a739-05e9-4949-ba4b-aeb4274c31e0` |
 | Project **Metronome** | `bf16f71d-7545-4fad-a283-5d123a06ada2` |
 | Project **AgileKit** | `8f981427-92e8-4218-ab04-dcca8be7a0ed` |
+| Project **Empower Widgets** | `987da8a5-0a0b-4c80-973f-9e02a98a4bc6` |
 
-Wired so far: Gerador de Escala (A, B, E; Native, so no C) and AgileKit (`PCS-`, Jira on fullsteam.atlassian.net: A, B, C, E). Configured, not wired: Metronome (Jira on gridxissues.atlassian.net, which also needs `acli` signed in there).
+Wired so far: Gerador de Escala (A, B, E; Native, so no C) and AgileKit (`PCS-`, Jira on fullsteam.atlassian.net: A, B, C, E), and Empower Widgets (`RTP-`, Jira on gridxissues.atlassian.net: A, B, C, E). Configured, not wired: Metronome (`DXPX-`, `AI-`). `RTP-` feeds several repos; each one added gets its own A and B, sharing `RTP-`'s C and E.
 
 ## Prerequisites on the runner
 

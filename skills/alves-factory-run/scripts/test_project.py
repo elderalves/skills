@@ -77,5 +77,89 @@ class ProjectTest(unittest.TestCase):
             self.assertEqual(project.main(["--ref", "PCS-1", "--config", str(self.home / "none.json")]), 2)
 
 
+class SharedPrefixTest(unittest.TestCase):
+    """One Upstream tracker prefix feeding several repos, told apart by their Linear project."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.home = Path(self.tmp.name)
+        for name in ("empower", "explore", "pcs"):
+            (self.home / "Projects" / name).mkdir(parents=True)
+        self.env = mock.patch.dict(os.environ, {"HOME": str(self.home), "USERPROFILE": str(self.home)})
+        self.env.start()
+        self.config = {"projects": [
+            {"match": "PCS-", "repo": "~/Projects/pcs", "linear_project": "AgileKit"},
+            {"match": "RTP-", "repo": "~/Projects/empower", "linear_project": "Empower Widgets"},
+            {"match": "RTP-", "repo": "~/Projects/explore", "linear_project": "Explore Frontend"},
+            {"match": "RT", "repo": "~/Projects/pcs", "linear_project": "Other"},
+        ]}
+
+    def tearDown(self):
+        self.env.stop()
+        self.tmp.cleanup()
+
+    def test_candidates_are_every_entry_of_the_first_matching_prefix_in_order(self):
+        found = project.candidates(self.config, "RTP-49498")
+        self.assertEqual([e["linear_project"] for e in found], ["Empower Widgets", "Explore Frontend"])
+        self.assertEqual(Path(found[1]["repo"]), self.home / "Projects" / "explore")
+
+    def test_a_single_entry_prefix_has_one_candidate(self):
+        self.assertEqual([e["linear_project"] for e in project.candidates(self.config, "PCS-1")], ["AgileKit"])
+
+    def test_candidates_skip_a_repo_missing_here_and_say_so(self):
+        (self.home / "Projects" / "explore").rmdir()
+        skipped = []
+        found = project.candidates(self.config, "RTP-1", skipped)
+        self.assertEqual([e["linear_project"] for e in found], ["Empower Widgets"])
+        self.assertEqual(len(skipped), 1)
+        self.assertIn("Explore Frontend", skipped[0])
+
+    def test_candidates_with_no_repo_here_is_an_error(self):
+        (self.home / "Projects" / "empower").rmdir()
+        (self.home / "Projects" / "explore").rmdir()
+        with self.assertRaisesRegex(project.ProjectError, "not a directory on this machine"):
+            project.candidates(self.config, "RTP-1")
+
+    def test_ref_alone_refuses_to_guess_between_shared_entries(self):
+        with self.assertRaisesRegex(project.ProjectError, "Empower Widgets.*Explore Frontend"):
+            project.find(self.config, ref="RTP-1")
+
+    def test_ref_and_linear_project_pick_one_entry_ignoring_case(self):
+        entry = project.find(self.config, ref="RTP-1", linear_project="explore frontend")
+        self.assertEqual(Path(entry["repo"]), self.home / "Projects" / "explore")
+
+    def test_linear_project_outside_the_prefix_is_an_error(self):
+        with self.assertRaisesRegex(project.ProjectError, "AgileKit"):
+            project.find(self.config, ref="RTP-1", linear_project="AgileKit")
+
+    def test_single_entry_prefix_still_checks_the_linear_project(self):
+        self.assertEqual(project.find(self.config, ref="PCS-1", linear_project="AgileKit")["match"], "PCS-")
+        with self.assertRaises(project.ProjectError):
+            project.find(self.config, ref="PCS-1", linear_project="Empower Widgets")
+
+    def test_shared_prefix_needs_a_distinct_linear_project_per_entry(self):
+        for second in ({"match": "RTP-", "repo": "~/Projects/explore"},
+                       {"match": "RTP-", "repo": "~/Projects/explore", "linear_project": "empower widgets"}):
+            config = {"projects": [self.config["projects"][1], second]}
+            with self.assertRaisesRegex(project.ProjectError, "RTP-.*linear_project"):
+                project.candidates(config, "RTP-1")
+
+    def test_main_prints_candidates_and_picks_with_linear_project(self):
+        path = self.home / "projects.json"
+        path.write_text(json.dumps(self.config), encoding="utf-8")
+        out = io.StringIO()
+        with redirect_stdout(out):
+            self.assertEqual(project.main(["--ref", "RTP-7", "--candidates", "--config", str(path)]), 0)
+        self.assertEqual(len(json.loads(out.getvalue())), 2)
+        out = io.StringIO()
+        with redirect_stdout(out):
+            self.assertEqual(project.main(["--ref", "RTP-7", "--linear-project", "Empower Widgets",
+                                           "--config", str(path)]), 0)
+        self.assertEqual(json.loads(out.getvalue())["linear_project"], "Empower Widgets")
+        with redirect_stderr(io.StringIO()):
+            self.assertEqual(project.main(["--ref", "RTP-7", "--config", str(path)]), 2)
+            self.assertEqual(project.main(["--candidates", "--linear-project", "X", "--config", str(path)]), 2)
+
+
 if __name__ == "__main__":
     unittest.main()

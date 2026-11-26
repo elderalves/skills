@@ -94,23 +94,39 @@ class DroppedTriggers(unittest.TestCase):
     def test_a_fresh_trigger_waits(self):
         self.assertIsNone(run(ticket("Ready", entered="2026-11-26T11:45:00Z"))["start"])
 
-    def test_a_ticket_waiting_in_plan_approved_is_started(self):
-        start = run(ticket("Plan Approved", entered="2026-11-26T11:00:00Z"))["start"]
-        self.assertEqual((start["kind"], start["skill"], start["argument"]),
-                         ("start-implement", "alves-factory-implement", "ALV-1"))
+    def test_a_ticket_waiting_in_a_trigger_status_is_retriggered_not_started(self):
+        for state in ("Ready", "Plan Approved"):
+            with self.subTest(state):
+                result = run(ticket(state, entered="2026-11-26T11:00:00Z"))
+                [action] = result["actions"]
+                self.assertEqual((action["kind"], action["via_status"], action["to_status"]),
+                                 ("retrigger", "Backlog", state))
+                self.assertTrue(action["comment"].startswith(sweep.RETRIGGERED))
+                self.assertIsNone(result["start"])
 
-    def test_one_start_per_pass_triggers_first_then_oldest(self):
+    def test_a_trigger_that_drops_again_after_a_retrigger_is_blocked(self):
+        again = comment("2026-11-26T11:00:00Z", sweep.retrigger_comment("Ready", sweep.timedelta(minutes=40)))
+        [action] = run(ticket("Ready", entered="2026-11-26T11:00:00Z", comments=[again]))["actions"]
+        self.assertEqual((action["kind"], action["to_status"]), ("block", "Blocked"))
+        self.assertIn("trigger", action["comment"])
+
+    def test_one_retrigger_per_pass_oldest_first_the_rest_deferred(self):
         result = run(ticket("Ready", entered="2026-11-26T10:00:00Z", identifier="ALV-2"),
-                     ticket("Ready", entered="2026-11-26T09:00:00Z", identifier="ALV-3"),
-                     upstream=[{"ref": "PCS-9", "triage": None, "has_factory_ticket": False}])
-        self.assertEqual(result["start"]["argument"], "ALV-3")
-        self.assertEqual([d["argument"] for d in result["deferred"]], ["ALV-2", "PCS-9"])
+                     ticket("Plan Approved", entered="2026-11-26T09:00:00Z", identifier="ALV-3"))
+        self.assertEqual([(a["kind"], a["ticket"]) for a in result["actions"]], [("retrigger", "ALV-3")])
+        self.assertEqual([(d["kind"], d["ticket"]) for d in result["deferred"]], [("retrigger", "ALV-2")])
+
+    def test_one_start_per_pass_in_order(self):
+        result = run(upstream=[{"ref": "PCS-9", "triage": None, "has_factory_ticket": False},
+                               {"ref": "PCS-8", "triage": "work", "has_factory_ticket": False}])
+        self.assertEqual(result["start"]["argument"], "PCS-8")
+        self.assertEqual([d["argument"] for d in result["deferred"]], ["PCS-9"])
         self.assertNotIn("priority", result["start"])
 
 
 class Upstream(unittest.TestCase):
     CASES = [
-        ("work but no ticket", "work", False, ("start-plan", "alves-factory-run")),
+        ("work but no ticket", "work", False, ("start-triage", "alves-factory-triage")),
         ("never triaged", None, False, ("start-triage", "alves-factory-triage")),
         ("unsure but no ticket", "unsure", False, ("start-triage", "alves-factory-triage")),
         ("not work", "not work", False, None),
@@ -156,7 +172,8 @@ class FakeLinear:
         self.tickets, self.states, self.tracked, self.writes = list(tickets), states or {}, set(tracked), []
 
     def list_issues(self, team, project, states):
-        return [t for t in self.tickets if t["state"] in states]
+        self.listed = getattr(self, "listed", []) + [project]
+        return [t for t in self.tickets if t["state"] in states and t.get("project", project) == project]
 
     def find_by_url(self, url):
         return [{"identifier": "ALV-7"}] if url in self.tracked else []
@@ -215,7 +232,54 @@ class Gather(unittest.TestCase):
         self.assertIn("acli is signed in to other.atlassian.net", notes[0])
 
 
+class SharedPrefix(unittest.TestCase):
+    """One Jira prefix feeding two repos, each with its own Linear project."""
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp())
+        for name in ("empower", "explore"):
+            (self.root / name).mkdir()
+        self.empower = {"match": "RTP-", "repo": str(self.root / "empower"), "linear_project": "Empower Widgets",
+                        "upstream": {"type": "jira", "site": "g.atlassian.net"}}
+        self.explore = {**self.empower, "repo": str(self.root / "explore"), "linear_project": "Explore Frontend"}
+
+    def test_select_takes_every_entry_of_the_match(self):
+        notes = []
+        entries = sweep.select({"projects": [self.empower, self.explore, JIRA]}, ["RTP-"], notes)
+        self.assertEqual([e["linear_project"] for e in entries], ["Empower Widgets", "Explore Frontend"])
+        self.assertEqual(notes, [])
+
+    def test_select_skips_a_shared_entry_whose_repo_is_missing(self):
+        notes = []
+        gone = {**self.explore, "repo": str(self.root / "gone")}
+        entries = sweep.select({"projects": [self.empower, gone]}, ["RTP-"], notes)
+        self.assertEqual([e["linear_project"] for e in entries], ["Empower Widgets"])
+        self.assertIn("Explore Frontend", notes[0])
+
+    def test_jira_is_searched_once_per_prefix(self):
+        explore_ticket = {**ticket("Ready", ref="RTP-2"), "project": "Explore Frontend"}
+        del explore_ticket["ref"]
+        explore_ticket["attachment_urls"] = ["https://g.atlassian.net/browse/RTP-2"]
+        linear = FakeLinear([explore_ticket])
+        runner = fake_runner({
+            "acli jira auth status": (0, "Site: g.atlassian.net"),
+            "acli jira workitem search": (0, json.dumps([{"key": "RTP-5"}])),
+        })
+        projects, notes = sweep.gather([self.empower, self.explore], "Alves", LIMITS, linear, runner, self.root)
+        self.assertEqual(linear.listed, ["Empower Widgets", "Explore Frontend"])
+        self.assertEqual([len(p["upstream"]) for p in projects], [1, 0])
+        self.assertEqual([[t["ref"] for t in p["tickets"]] for p in projects], [[], ["RTP-2"]])
+        self.assertEqual(sum(c[:4] == ["acli", "jira", "workitem", "search"] for c in runner.calls), 1)
+
+
 class Apply(unittest.TestCase):
+    def test_a_retrigger_bounces_through_its_via_status(self):
+        plan = run(ticket("Plan Approved", entered="2026-11-26T11:00:00Z", identifier="ALV-4"))
+        linear = FakeLinear(states={"ALV-4": "Plan Approved"})
+        sweep.apply(plan, linear)
+        self.assertEqual(linear.writes, [("comment", "ALV-4"), ("state", "ALV-4", "Backlog"),
+                                         ("state", "ALV-4", "Plan Approved")])
+
     def test_writes_only_where_the_status_is_unchanged(self):
         plan = run(ticket("Planning", entered="2026-11-26T08:00:00Z", identifier="ALV-1"),
                    ticket("In Progress", entered="2026-11-26T01:00:00Z", identifier="ALV-2"))

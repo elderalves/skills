@@ -29,7 +29,7 @@ Maps an Upstream ticket to the project the factory works in. Example: [projects.
 - `linear_team`: the Factory tracker team whose statuses match [linear-record.md](linear-record.md).
 - `council`: optional shared Council seats for every project. See **Council targets** below.
 - `councils`: optional named Councils that project entries refer to by name. See **Council targets** below.
-- `projects`: tried in order; the first whose `match` is a prefix of the Upstream reference wins.
+- `projects`: tried in order; the first whose `match` is a prefix of the Upstream reference selects that prefix. Several entries may share one `match` when one Upstream tracker feeds several repos (a Jira project covering several apps): see **One prefix, several repos** below.
   - `match`: a Jira key prefix (`PROJ-`), `github:<owner>/<repo>#` for GitHub Issues, or `linear-project:<Linear project name>` for **Native tickets**. A `linear-project:` entry matches a Factory ticket in that Linear project with no Upstream link; it never matches by prefix.
   - `repo`: path of the project checkout on the runner: absolute, or starting with `~/` for the home directory, so one `projects.json` serves Windows, Linux and macOS. Keep checkouts at `~/Projects/<org>/repos/<name>` on every machine (on Windows a junction from `~/Projects` to another drive or folder works).
   - `base_branch`: the branch implementation branches start from and PRs target.
@@ -87,10 +87,10 @@ A seat names nothing else: the old `provider` label is gone, and a config that s
 The resolver snapshots the merged seats for one run and checks them against the policy:
 
 ```sh
-python <run-skill-dir>/scripts/council.py --project "PROJ-" [--policy <file> ...] --out <work-dir>/council.json
+python <run-skill-dir>/scripts/council.py --project "PROJ-" [--linear-project <name>] [--policy <file> ...] --out <work-dir>/council.json
 ```
 
-`--project` is the exact `match` value of the entry already selected by the run. `--policy` takes the same layers the run passes to the review (see **Policy files**). `--config <file>` overrides the default `~/.alves-factory/projects.json`. Exit `2` identifies an unreadable file, an invalid seat, an unknown Council name, a missing project, or a Council that cannot reach the policy's `min_models`. The resolver validates structure; the review checks each connection, model and option against T3's catalog before dispatch, and an unavailable seat stops the run Blocked.
+`--project` is the exact `match` value of the entry already selected by the run, and `--linear-project` its `linear_project` when several entries share that match. `--policy` takes the same layers the run passes to the review (see **Policy files**). `--config <file>` overrides the default `~/.alves-factory/projects.json`. Exit `2` identifies an unreadable file, an invalid seat, an unknown Council name, a missing project, or a Council that cannot reach the policy's `min_models`. The resolver validates structure; the review checks each connection, model and option against T3's catalog before dispatch, and an unavailable seat stops the run Blocked.
 
 The run passes `--council <work-dir>/council.json` to every review round. Each round writes the seats with the options actually sent to `round-<N>/council.json`, and the gate checks every review against it. Config edits affect new runs; an active run keeps its snapshot.
 
@@ -122,16 +122,31 @@ The factory's scripts that reach the network take `--account` and fetch the toke
 
 Never `gh auth switch`: it changes the machine's active account under concurrent runs and the owner's own terminal.
 
+## One prefix, several repos
+
+When one Upstream tracker holds work for several repos and no ticket field says which (the tracker's components or labels go unused), give each repo its own entry with the same `match` and a distinct `linear_project` ([ADR 0007](../../../docs/factory/adr/0007-triage-chooses-the-repo.md)):
+
+```json
+{ "match": "RTP-", "repo": "~/Projects/gx/repos/empower-widgets", "base_branch": "master", "upstream": { "type": "jira", "site": "gridxissues.atlassian.net" }, "linear_project": "Empower Widgets" },
+{ "match": "RTP-", "repo": "~/Projects/gx/repos/explore-frontend", "base_branch": "master", "upstream": { "type": "jira", "site": "gridxissues.atlassian.net" }, "linear_project": "Explore Frontend" }
+```
+
+- **Triage** chooses the repo from evidence in each candidate and files the Factory ticket in that entry's Linear project.
+- **Every later stage** resolves the entry from the upstream ref **and** the Factory ticket's Linear project, so a Linear project names one repo. Moving a Factory ticket to another Linear project moves its work to that repo.
+- **Per repo:** each entry has its own planning and implementation tasks (A, B, D in the [T3 wiring](../../../docs/factory/t3-wiring.md)) filtered by its Linear project. The prefix keeps one triage task and one sweep.
+- A prefix with one entry behaves as before; its `linear_project` must still match the Factory ticket's project.
+
 ## Resolving the project
 
 Find the run's entry with the resolver, never by reading `projects.json` by hand:
 
 ```sh
-python <alves-factory-run>/scripts/project.py --ref <upstream-ref>
-python <alves-factory-run>/scripts/project.py --linear-project <name>   # a Native ticket
+python <alves-factory-run>/scripts/project.py --ref <upstream-ref> --linear-project <the Factory ticket's Linear project>
+python <alves-factory-run>/scripts/project.py --ref <upstream-ref> --candidates   # triage: every entry of the prefix
+python <alves-factory-run>/scripts/project.py --linear-project <name>             # a Native ticket
 ```
 
-It applies the match rules above and prints the entry as JSON with `repo` absolute for this machine. Use that `repo`, never the raw value. Exit `2` (no matching entry, an unreadable config, or a `repo` that is not a directory here) and an unknown `upstream.type` stop the run as **Blocked**, with the resolver's message.
+It applies the match rules above and prints the entry as JSON with `repo` absolute for this machine (`--candidates`: a list, skipping with a `warning:` any entry whose repo is missing here). Use that `repo`, never the raw value. `--ref` without `--linear-project` works only for a prefix with one entry. Exit `2` (no matching entry, an ambiguous ref, a shared prefix without distinct `linear_project`s, an unreadable config, or a `repo` that is not a directory here) and an unknown `upstream.type` stop the run as **Blocked**, with the resolver's message.
 
 ## Policy files
 

@@ -115,6 +115,19 @@ class NamedCouncils(unittest.TestCase):
         self.assertEqual(council.resolve(settings, "PCS-")["architecture"],
                          seat("claudeAgent", "claude-opus-5-5"))
 
+    def test_shared_prefix_entries_are_told_apart_by_linear_project(self):
+        explore = seats(OPUS, OPUS, SONNET)
+        settings = {"councils": {"explore": explore},
+                    "projects": [{"match": "RTP-", "linear_project": "Empower Widgets"},
+                                 {"match": "RTP-", "linear_project": "Explore Frontend", "council": "explore"}]}
+        self.assertEqual(council.resolve(settings, "RTP-", linear_project="explore frontend"), explore)
+        self.assertEqual(council.resolve(settings, "RTP-", linear_project="Empower Widgets")["architecture"],
+                         seat("claudeAgent", "claude-opus-5-5"))
+        with self.assertRaisesRegex(council.ConfigError, "exactly one"):
+            council.resolve(settings, "RTP-")
+        with self.assertRaisesRegex(council.ConfigError, "exactly one"):
+            council.resolve(settings, "RTP-", linear_project="Metronome")
+
     def test_partial_named_council_layers_over_owner_and_defaults(self):
         owner = {"requirements": seat(*SONNET)}
         agilekit = {"testing-risk": seat("codex", "gpt-6.1-sol")}

@@ -1,7 +1,7 @@
 ---
 name: alves-factory-run
 description: Planning run of the alves factory. Take an Upstream ticket (or a Factory ticket moved to Ready) through autonomous planning, Council review and the gate, recording everything on the Linear Factory ticket and ending in Plan Approved, Needs Human or Blocked. Use when a factory trigger names a ticket to plan, or for /alves-factory-run.
-argument-hint: <upstream-ref | factory-ticket> [--dry-run] [--pasted <file>]
+argument-hint: <upstream-ref | factory-ticket> [--linear-project <name>] [--dry-run] [--pasted <file>]
 ---
 
 Run one **planning run**: from an Upstream ticket to a Gate decision, with no human in the loop. The run ends in exactly one of **Plan Approved**, **Needs Human** or **Blocked**, and never waits: the owner's later change on the Factory ticket starts a new run. Terms follow the factory glossary (`~/.agents/docs/factory/GLOSSARY.md`).
@@ -9,6 +9,7 @@ Run one **planning run**: from an Upstream ticket to a Gate decision, with no hu
 ## Arguments
 
 - An **upstream ref** (`PROJ-123`, `github:acme/widgets#12`) or a **Factory ticket** identifier (`ALV-12`, when the trigger is the ticket moving to Ready).
+- `--linear-project <name>`: with an upstream ref, the Linear project (and so the repo) to plan it in, when the ref's prefix feeds several repos. Not needed with a Factory ticket, whose own Linear project decides.
 - `--pasted <file>`: the Upstream ticket is that file's text; the upstream ref is `pasted:<file stem>`.
 - `--dry-run`: read the Upstream ticket, plan and review as usual, but write nothing to Linear or upstream. Each record write goes to `<work-dir>/record/` instead, as numbered files (`01-status.txt`, `02-comment.md`, …), and the Factory ticket is assumed new.
 
@@ -27,7 +28,7 @@ Run one **planning run**: from an Upstream ticket to a Gate decision, with no hu
    - without one, in a Linear project that a `linear-project:` entry matches: it is a **Native ticket**, and its own identifier (`ALV-12`) is the upstream ref;
    - otherwise it is no factory work (an ordinary ticket moved to Ready): exit with no writes.
 
-   Resolve the project with `python <skill-dir>/scripts/project.py --ref <upstream-ref>` (a Native ticket: `--linear-project <its Linear project>`), per [references/config.md](references/config.md#resolving-the-project); exit `2` stops the run Blocked with its message. The **work dir** is `~/.alves-factory/runs/<upstream-ref, with / # : replaced by ->/`; leave it alone until step 2 has claimed the ticket, since a run that owns the ticket may be writing to it. Work in the current directory when it is a checkout of the project's repo (same `origin`), as the trigger left it: T3 Code starts each run in its own worktree, so never switch its branch. Otherwise use the `repo` the resolver printed. Resolve the run's GitHub account per [config.md](references/config.md#github-account) and `git fetch origin <base_branch>` with it, so an unreachable repo stops the run Blocked now rather than at push time. Record the checkout's `git rev-parse HEAD` as the **base commit**.
+   Resolve the project with `python <skill-dir>/scripts/project.py --ref <upstream-ref> --linear-project <the Factory ticket's Linear project>` (given an upstream ref: `--linear-project` only when the argument passed one; a Native ticket: `--linear-project <its Linear project>` alone), per [references/config.md](references/config.md#resolving-the-project); exit `2` stops the run Blocked with its message, which names the candidates when the ref's prefix feeds several repos and no Linear project chose one. The **work dir** is `~/.alves-factory/runs/<upstream-ref, with / # : replaced by ->/`; leave it alone until step 2 has claimed the ticket, since a run that owns the ticket may be writing to it. Work in the current directory when it is a checkout of the project's repo (same `origin`), as the trigger left it: T3 Code starts each run in its own worktree, so never switch its branch. Otherwise use the `repo` the resolver printed. Resolve the run's GitHub account per [config.md](references/config.md#github-account) and `git fetch origin <base_branch>` with it, so an unreachable repo stops the run Blocked now rather than at push time. Record the checkout's `git rev-parse HEAD` as the **base commit**.
 
 2. **Claim the Factory ticket.** A Native ticket is its own Factory ticket: skip the lookup and apply only the status rules below. Otherwise `linear.py find-by-url <upstream-url>`:
    - none: `linear.py create` it in the `linear_team` and the entry's `linear_project`, with status Planning, then run `find-by-url` again; if an older ticket now exists, `mark-duplicate` yours `--of` it and exit;
@@ -38,7 +39,7 @@ Run one **planning run**: from an Upstream ticket to a Gate decision, with no hu
 
    Only now, with the ticket yours, empty the work dir and create it.
 
-   Resolve the Council once with `python <skill-dir>/scripts/council.py --project <matched-entry's exact match value> [--policy <file> ...] --out <work-dir>/council.json`, passing the policy files from [config.md](references/config.md#policy-files), per [config.md](references/config.md#council-targets). Exit code `2` stops the run **Blocked** with its error. Keep any `warning:` lines it prints on stderr (such as a Council model billed to OpenCode Models credits) and quote them in round 0's comment. Keep this snapshot for every revision of the run.
+   Resolve the Council once with `python <skill-dir>/scripts/council.py --project <matched-entry's exact match value> --linear-project <its linear_project, when it has one> [--policy <file> ...] --out <work-dir>/council.json`, passing the policy files from [config.md](references/config.md#policy-files), per [config.md](references/config.md#council-targets). Exit code `2` stops the run **Blocked** with its error. Keep any `warning:` lines it prints on stderr (such as a Council model billed to OpenCode Models credits) and quote them in round 0's comment. Keep this snapshot for every revision of the run.
 
    **Done when** exactly one Factory ticket for this Upstream ticket is in Planning and is yours, and the work dir holds `council.json`.
 
