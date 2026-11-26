@@ -19,7 +19,7 @@ Each project's tasks run on exactly one machine, its **Trigger owner**: the webh
 | Field | Value |
 |---|---|
 | Runs on | the project's Trigger owner: the machine holding the repo, `~/.alves-factory/` and the skills |
-| Destination | New thread each run |
+| Destination | A to D: new thread each run. E: one thread for every pass (see Task E) |
 | Project | A, B, D: the T3 project for the repo (e.g. `metronome`). C, E: `alves-factory` |
 | Workspace | A, B, D: Create a new worktree. C, E: Local (`~/.alves-factory/`, no worktree) |
 | Base branch | A, B, D: From `<base_branch>` (remote), as in `~/.alves-factory/projects.json` |
@@ -110,7 +110,9 @@ openssl rand -hex 20
 | Field | Value |
 |---|---|
 | Schedule | Interval, every 30 minutes (`everyMs: 1800000`) |
-| Destination | New thread each run, in the `alves-factory` project with no worktree: the sweep starts only triage in its own thread, and planning and implementation through their triggers. In a repo's project with a worktree, T3 fetches that repo before every pass, so the sweep fails whenever that fetch does, the case its Account pin repair exists for |
+| Destination | One thread for every pass, each in a fresh session (`freshSession: true`, not bound to the thread that created the task, so the first pass creates the thread), in the `alves-factory` project with no worktree: the sweep starts only triage in its own thread, and planning and implementation through their triggers. In a repo's project with a worktree, T3 fetches that repo before every pass, so the sweep fails whenever that fetch does, the case its Account pin repair exists for |
+
+A sweep every 30 minutes would otherwise add about 48 threads a day per prefix, most of them passes that did nothing. With one thread, its title shows the latest pass (see **Thread titles**), and a triage the sweep starts runs in that thread too; the Factory ticket, not the thread, is the record ([ADR 0001](adr/0001-factory-tracker-is-the-record.md)).
 
 Prompt, naming the `projects.json` entries it covers by their exact `match` (one prefix may cover several repos' entries; a sweep of Metronome's tracker names `DXPX-` and `AI-`):
 
@@ -120,6 +122,10 @@ A schedule started this run. Never ask questions: finish with the skill's final 
 ```
 
 A sweep restarts a dead run by moving its ticket back to Ready or Plan Approved, and retriggers a dropped one by moving it to Backlog and back, so Tasks A and B must be wired for either to start anything; a ticket whose trigger drops again after a retrigger goes Blocked, naming the trigger as the cause ([ADR 0003](adr/0003-sweep-restarts-through-the-triggers.md)). Check what a sweep would do, with no writes, by running the skill with `--dry-run`.
+
+## Thread titles
+
+Every task starts its threads with the task's name, so each run renames its own thread: `plan RTP-412 → Plan Approved`, `triage RTP-415 → Unsure`, `sweep RTP- · 14:30 · triaged RTP-412 → Work · closed 2`. A run renames once when it knows its ticket and again when it ends, so a run that died keeps a title ending in `…`. Only the skill the task's prompt names renames, so a run started by hand, or a triage the sweep starts, leaves the title alone. The format is in [thread-title.md](../../skills/alves-factory-run/references/thread-title.md).
 
 ## Ids
 

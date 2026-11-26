@@ -23,6 +23,7 @@ Run one **implementation run**: from an approved Plan to a PR, promoted ready fo
 - The Plan is the scope. A small correction the Plan clearly intended (a renamed path, a typo in a command) is a **deviation** you make and record. A change to what the Plan builds, or work it does not list, is not yours to make: stop **Blocked**, so the owner can re-plan.
 - Commit only what the task's **Files** block names plus the tests it adds; never commit secrets, `.env` files or work-dir files.
 - A failure in a step that the step does not handle ends the run **Blocked** (step 10). The steps' own commands and tools are the run's work; a harness feature they do not name (linking the thread to an issue, opening a browser) is optional, and its failure is noted in the final reply and changes nothing. Screenshots are optional too: a failed capture or evidence push goes on without them ([references/evidence.md](references/evidence.md#failures)).
+- **Thread title.** When a scheduled task started this run, rename its thread to `implement <ref> …` (or `promote <ref> …`) once step 1 knows the upstream ref, and to `<stage> <ref> → <outcome>` however the run ends, per [thread-title.md](../alves-factory-run/references/thread-title.md). A failed rename changes nothing.
 - However the run ends (In Review, Blocked, or a dry run's stop), it leaves the checkout clean and on its **starting branch** (step 4), keeping the factory branch: the owner's or the trigger's checkout is as it was found.
 
 ## Commit messages
