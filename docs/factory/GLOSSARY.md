@@ -92,6 +92,14 @@ _Avoid_: assets branch, screenshot branch
 The scripted test, at the end of an implementation run, of whether the factory may promote its draft PR on its own: every condition must hold, and any failure keeps the draft for the owner.
 _Avoid_: safety check, auto-approve
 
+**Diff review**:
+The Council's independent reading of a finished branch's diff, before its PR opens, by the same three seats that reviewed the Plan. Only a clean diff review lets the ready check promote a PR; major findings get one fix pass and otherwise keep it a draft.
+_Avoid_: code review (the project team's), self-review, second Council round
+
+**Process deviation**:
+A time the harness forced an implementation run off its own process, such as a task written in-session because its subagent could not start. Unlike a deviation from the Plan, any process deviation keeps the PR a draft.
+_Avoid_: fallback, deviation (alone)
+
 **Promotion**:
 Marking the factory's draft PR ready for review by the project team, either by the ready check on a project that allows it or by the owner moving the Factory ticket to Team Review.
 _Avoid_: publishing, undrafting, approval

@@ -2,12 +2,13 @@
 
 Usage:
     python ready.py --pr-ready auto|draft --decision FILE --verification FILE
-                    [--checks FILE] [--risk-flag ID ...] [--out FILE]
+                    [--diff-review FILE] [--checks FILE] [--risk-flag ID ...] [--out FILE]
 
 --decision is the last Council round's decision.json; --verification is the run's
-verification.json (format in references/ready-check.md); --checks is the output of
-`gh pr checks <pr> --json name,bucket`, left out in a dry run; each --risk-flag is one
-the Plan declares. Prints and writes (to --out, when given) {"ready", "reasons"}: when
+verification.json (format in references/ready-check.md); --diff-review is the last pass
+of the independent diff review (diff_gate.py's output), a missing one keeping the draft;
+--checks is the output of `gh pr checks <pr> --json name,bucket`, left out in a dry run;
+each --risk-flag is one the Plan declares. Prints and writes (to --out, when given) {"ready", "reasons"}: when
 ready is false, reasons names every condition that failed, in plain words.
 
 Exit codes: 0 when a result was written (ready or not), 2 when an input is unusable,
@@ -23,6 +24,7 @@ from pathlib import Path
 MODES = {"auto", "draft"}
 PASSING = {"pass", "skipping"}
 RESULTS = {"pass", "fail"}
+DIFF_RESULTS = {"clean", "fix", "unresolved", "incomplete"}
 
 
 class InputError(Exception):
@@ -31,7 +33,7 @@ class InputError(Exception):
 
 def read_json(path, what):
     try:
-        return json.loads(Path(path).read_text(encoding="utf-8"))
+        return json.loads(Path(path).read_text(encoding="utf-8-sig"))
     except (OSError, json.JSONDecodeError) as error:
         raise InputError(f"cannot read {what} {path}: {error}") from error
 
@@ -56,6 +58,16 @@ def check_verification(verification):
     if (not isinstance(evidence, dict) or not isinstance(evidence.get("required"), bool)
             or not isinstance(evidence.get("missing", []), list)):
         raise InputError("verification.evidence must be {required: bool, missing: [reason, ...]}")
+    process = verification.get("process_deviations", [])
+    if not isinstance(process, list) or not all(isinstance(p, str) and p.strip() for p in process):
+        raise InputError("verification.process_deviations must be a list of sentences")
+
+
+def check_diff_review(review):
+    if not isinstance(review, dict) or review.get("result") not in DIFF_RESULTS:
+        raise InputError(f"diff review must be diff_gate.py's output, with result one of {sorted(DIFF_RESULTS)}")
+    if not isinstance(review.get("reasons", []), list):
+        raise InputError("diff review reasons must be a list")
 
 
 def check_ci(checks):
@@ -65,7 +77,7 @@ def check_ci(checks):
         raise InputError("checks must be the list `gh pr checks --json name,bucket` prints")
 
 
-def evaluate(pr_ready, decision, verification, checks, plan_risk_flags=()):
+def evaluate(pr_ready, decision, verification, checks, plan_risk_flags=(), diff_review=None):
     """Return {"ready", "reasons"}. Every condition is evaluated, so reasons lists all failures."""
     reasons = []
 
@@ -101,6 +113,14 @@ def evaluate(pr_ready, decision, verification, checks, plan_risk_flags=()):
             base = ", as it did on the base branch" if check.get("baseline") == "fail" else ""
             reasons.append(f"`{check['command']}` fails on the branch{base}")
 
+    if diff_review is None:
+        reasons.append("no independent diff review ran")
+    elif diff_review["result"] != "clean":
+        detail = "; ".join(str(r) for r in diff_review.get("reasons", [])) or "no reason given"
+        reasons.append(f"the independent diff review is {diff_review['result']}: {detail}")
+
+    reasons += [f"process deviation: {p}" for p in verification.get("process_deviations", [])]
+
     return {"ready": not reasons, "reasons": reasons or ["all conditions met"]}
 
 
@@ -109,6 +129,7 @@ def main(argv=None):
     parser.add_argument("--pr-ready", required=True, help="the project's pr_ready setting: auto or draft")
     parser.add_argument("--decision", type=Path, required=True)
     parser.add_argument("--verification", type=Path, required=True)
+    parser.add_argument("--diff-review", type=Path, help="the last diff review pass; omit only when none ran")
     parser.add_argument("--checks", type=Path, help="`gh pr checks --json name,bucket` output; omit in a dry run")
     parser.add_argument("--risk-flag", action="append", default=[], dest="risk_flags")
     parser.add_argument("--out", type=Path)
@@ -122,6 +143,9 @@ def main(argv=None):
             raise InputError("decision must be a JSON object")
         verification = read_json(args.verification, "verification")
         check_verification(verification)
+        diff_review = read_json(args.diff_review, "diff review") if args.diff_review else None
+        if diff_review is not None:
+            check_diff_review(diff_review)
         checks = read_json(args.checks, "checks") if args.checks else None
         if checks is not None:
             check_ci(checks)
@@ -129,7 +153,7 @@ def main(argv=None):
         print(f"error: {error}", file=sys.stderr)
         return 2
 
-    result = evaluate(args.pr_ready, decision, verification, checks, args.risk_flags)
+    result = evaluate(args.pr_ready, decision, verification, checks, args.risk_flags, diff_review)
     text = json.dumps(result, indent=2)
     if args.out:
         args.out.write_text(text + "\n", encoding="utf-8")

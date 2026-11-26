@@ -11,6 +11,7 @@ import ready
 
 
 DECISION = {"decision": "implement", "rule": "meets-bar", "risk_flags": []}
+CLEAN = {"result": "clean", "pass": 0, "reasons": ["3 reviews, no major finding"]}
 GREEN = [{"name": "Build & Test", "bucket": "pass"}, {"name": "license/snyk", "bucket": "pass"}]
 
 
@@ -25,8 +26,8 @@ def verification(**fields):
     return base
 
 
-def run(pr_ready="auto", decision=DECISION, verify=None, checks=GREEN, flags=()):
-    return ready.evaluate(pr_ready, decision, verify or verification(), checks, flags)
+def run(pr_ready="auto", decision=DECISION, verify=None, checks=GREEN, flags=(), diff=CLEAN):
+    return ready.evaluate(pr_ready, decision, verify or verification(), checks, flags, diff)
 
 
 class Evaluate(unittest.TestCase):
@@ -70,6 +71,15 @@ class Evaluate(unittest.TestCase):
         ("check already failing on base",
          {"verify": verification(checks=[{"command": "yarn build-storybook", "result": "fail", "baseline": "fail"}])},
          "fails on the branch, as it did on the base branch"),
+        ("no diff review", {"diff": None}, "no independent diff review ran"),
+        ("diff review left a major finding",
+         {"diff": {"result": "unresolved", "reasons": ["architecture: dead branch (src/a.ts:12)"]}},
+         "diff review is unresolved: architecture: dead branch"),
+        ("a diff reviewer failed", {"diff": {"result": "incomplete", "reasons": ["testing-risk: no review"]}},
+         "diff review is incomplete: testing-risk: no review"),
+        ("subagents unavailable",
+         {"verify": verification(process_deviations=["subagent dispatch failed; tasks implemented in-session"])},
+         "process deviation: subagent dispatch failed"),
     ]
 
     def test_each_failed_condition_keeps_a_draft(self):
@@ -103,9 +113,11 @@ class Main(unittest.TestCase):
             code = ready.main(list(argv))
         return code, out.getvalue(), err.getvalue()
 
-    def args(self, verify=None, checks=GREEN, mode="auto"):
+    def args(self, verify=None, checks=GREEN, mode="auto", diff=CLEAN):
         argv = ["--pr-ready", mode, "--decision", self.write("decision.json", DECISION),
                 "--verification", self.write("verification.json", verify or verification())]
+        if diff is not None:
+            argv += ["--diff-review", self.write("diff-review.json", diff)]
         if checks is not None:
             argv += ["--checks", self.write("checks.json", checks)]
         return argv
@@ -133,10 +145,22 @@ class Main(unittest.TestCase):
             ("unknown result", verification(checks=[{"command": "x", "result": "ok"}])),
             ("negative fixes", verification(ci_fixes=-1)),
             ("evidence not an object", verification(evidence=["x"])),
+            ("process deviations not a list", verification(process_deviations="x")),
         ]
         for name, verify in bad:
             with self.subTest(name):
                 self.assertEqual(self.call(*self.args(verify=verify))[0], 2)
+
+    def test_malformed_diff_review_is_unusable(self):
+        self.assertEqual(self.call(*self.args(diff={"result": "ok"}))[0], 2)
+
+    def test_reads_files_with_a_byte_order_mark(self):
+        argv = self.args()
+        path = Path(argv[argv.index("--verification") + 1])
+        path.write_text(path.read_text(encoding="utf-8"), encoding="utf-8-sig")
+        code, printed, _ = self.call(*argv)
+        self.assertEqual(code, 0)
+        self.assertTrue(json.loads(printed)["ready"])
 
     def test_malformed_checks_are_unusable(self):
         self.assertEqual(self.call(*self.args(checks=[{"name": "x"}]))[0], 2)
