@@ -19,7 +19,7 @@ Each task belongs to one T3 project (one repo), so a project gets its own A and 
 | Project | the T3 project for the repo (e.g. `metronome`) |
 | Workspace | Create a new worktree |
 | Base branch | From `<base_branch>` (remote), as in `~/.factory/projects.json` |
-| Model | Claude Opus 5.5, High: the run's orchestrator; the Council's providers are separate, started through `delegate_task` |
+| Model | Claude Opus 5.5, High: the run's orchestrator, which also plans and implements; the Council's seats are separate, started through `delegate_task` |
 | Schedule | On webhook |
 
 ## Tasks A and B (Linear)
@@ -114,7 +114,7 @@ Wired so far: Gerador de Escala (A, B; Native, so no C). Configured, not wired: 
 - The five `alves-factory-*` skills visible to the orchestrator model (`~/.claude/skills` junctions to `~/.agents/skills`).
 - The project's `github_account` logged in to `gh`.
 - For a Jira project: `acli` signed in to the project's `upstream.site` (`acli jira auth status`). `acli` holds one site for the whole machine, so only the projects on that site can run; a run on another site's project stops with both sites named.
-- For a three-provider Council: OpenAI and a third provider enabled in T3 (Google through Antigravity, which needs the `agy` CLI, or another provider as a substitute).
+- Enable and authenticate in T3 every connection a Council seat uses. The default Council uses Codex (`gpt-6.2-sol`), Claude (`claude-opus-5-5`) and OpenCode Go Muse Spark 1.3 Contributor (through T3's `opencode` connection). Shared, named and per-project seats and Go billing routing are in [factory config](../../skills/alves-factory-run/references/config.md#council-targets); the optional model floor is in [policy files](../../skills/alves-factory-run/references/config.md#council-fidelity-and-model-floor).
 
 ## First live test
 

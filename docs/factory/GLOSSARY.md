@@ -46,6 +46,14 @@ _Avoid_: council review, vote
 The set of independent reviewers who each produce a Plan review of the same revision in one round.
 _Avoid_: panel, review board
 
+**Council seat**:
+The T3 connection and exact model configured to review one lens of a Council. Every review must come from its lens's seat; one model may hold several seats.
+_Avoid_: reviewer target, provider slot
+
+**Model floor**:
+The minimum number of distinct models a Council round must include (`min_models`), counting one model reached through two connections once. Off by default, so the configured seats decide diversity.
+_Avoid_: provider diversity, single-provider policy
+
 **Plan score**:
 The weighted rubric result computed from a round's Plan reviews. It measures how well grounded and complete a Plan is, not the probability that it succeeds.
 _Avoid_: confidence, confidence score

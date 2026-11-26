@@ -29,6 +29,8 @@ Run one **planning run**: from an Upstream ticket to a Gate decision, with no hu
 
    Match the upstream ref against `~/.factory/projects.json` per [references/config.md](references/config.md). The **work dir** is `~/.factory/runs/<upstream-ref, with / # : replaced by ->/`; empty it, then create it. Work in the current directory when it is a checkout of the project's repo (same `origin`), as the trigger left it: T3 Code starts each run in its own worktree, so never switch its branch. Otherwise use the configured `repo`. Resolve the run's GitHub account per [config.md](references/config.md#github-account) and `git fetch origin <base_branch>` with it, so an unreachable repo stops the run Blocked now rather than at push time. Record the checkout's `git rev-parse HEAD` as the **base commit**.
 
+   Resolve the Council once with `python <skill-dir>/scripts/council.py --project <matched-entry's exact match value> [--policy <file> ...] --out <work-dir>/council.json`, passing the policy files from [config.md](references/config.md#policy-files), per [config.md](references/config.md#council-targets). Exit code `2` stops the run **Blocked** with its error. Keep any `warning:` lines it prints on stderr (such as a Council model billed to OpenCode Models credits) and quote them in round 0's comment. Keep this snapshot for every revision of the run.
+
 2. **Claim the Factory ticket.** A Native ticket is its own Factory ticket: skip the lookup and apply only the status rules below. Otherwise `linear.py find-by-url <upstream-url>`:
    - none: `linear.py create` it in the `linear_team` and the entry's `linear_project`, with status Planning, then run `find-by-url` again; if an older ticket now exists, `mark-duplicate` yours `--of` it and exit;
    - more than one: `mark-duplicate` every ticket but the oldest, then continue with the oldest;
@@ -43,7 +45,7 @@ Run one **planning run**: from an Upstream ticket to a Gate decision, with no hu
 4. **Plan.** Invoke `alves-factory-plan` with the work dir. Publish both files: `linear.py put-doc --title Plan` and `--title Assumptions`. When it returns `blocked-on-owner`, go to **Escalate**.
 
 5. **Review, gate, repeat.** Starting at revision `0`:
-   1. Set Plan Review. Invoke `alves-factory-review` with the work dir, `--revision <N>`, and the policy files from [config.md](references/config.md#policy-files).
+   1. Set Plan Review. Invoke `alves-factory-review` with the work dir, `--revision <N>`, `--council <work-dir>/council.json`, and the policy files from [config.md](references/config.md#policy-files).
    2. Post the round comment from `round-<N>/summary.md` and `round-<N>/decision.json` per [linear-record.md](references/linear-record.md#comments), and `set-label gate:<decision>`.
    3. Act on the decision:
       - `implement`: set **Plan Approved**. Done.

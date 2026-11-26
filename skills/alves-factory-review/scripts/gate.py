@@ -1,11 +1,13 @@
 """Apply the factory's policy to one Council round and write the Gate decision.
 
 Usage:
-    python gate.py <reviews-dir> --revision N [--risk-flag ID ...] [--policy FILE ...] [--out FILE]
+    python gate.py <reviews-dir> --revision N --council FILE [--risk-flag ID ...] [--policy FILE ...] [--out FILE]
 
-Every *.json file in <reviews-dir> is one Plan review. Each --policy file is
-merged over the bundled default policy, in the order given. The decision is
-written to --out (default: decision.json next to <reviews-dir>) and printed.
+Every *.json file in <reviews-dir> is one Plan review. --council is the round's
+resolved Council: each review must come from its lens's configured connection
+and model. Each --policy file is merged over the bundled default policy, in the
+order given. The decision is written to --out (default: decision.json next to
+<reviews-dir>) and printed.
 
 Exit codes: 0 when a decision was written (including escalate), 2 when the
 arguments or the policy are unusable, so the caller should mark the run Blocked.
@@ -21,6 +23,15 @@ from pathlib import Path
 DEFAULT_POLICY = Path(__file__).resolve().parent.parent / "assets" / "default-policy.json"
 VERDICTS = {"approve", "revise", "escalate"}
 TIERS = {"escalate", "strict"}
+
+
+def model_identity(model):
+    """Normalize a model ID so one model reached through two connections counts once.
+
+    Drops a routing prefix (opencode-go/, copilot/), lowercases, and treats . as -:
+    claude-opus-5.5 (Copilot) and claude-opus-5-5 (Claude) are the same model.
+    """
+    return model.strip().rsplit("/", 1)[-1].lower().replace(".", "-")
 
 
 class PolicyError(Exception):
@@ -60,7 +71,7 @@ def check_policy(policy):
     implement = policy.get("implement", {})
     numbers = [
         policy.get("min_reviews"),
-        policy.get("min_providers"),
+        policy.get("min_models"),
         policy.get("escalate_below_average"),
         policy.get("max_revisions"),
         implement.get("min_average"),
@@ -68,6 +79,8 @@ def check_policy(policy):
         implement.get("max_spread"),
     ]
     strict = policy.get("strict", {})
+    if "min_providers" in policy:
+        raise PolicyError("policy.min_providers was replaced by min_models (distinct models, default 1)")
     if any(not is_number(n) for n in numbers + [strict.get("min_risk_score")]):
         raise PolicyError("policy is missing a numeric threshold")
     flags = policy.get("risk_flags", {})
@@ -84,6 +97,16 @@ def flag_tier(policy, flag):
     """A flag's tier: a plain-string or unknown flag is escalate, the safe default."""
     spec = policy.get("risk_flags", {}).get(flag)
     return spec.get("tier", "escalate") if isinstance(spec, dict) else "escalate"
+
+
+def load_council(path):
+    try:
+        council = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise PolicyError(f"cannot read council {path}: {error}") from error
+    if not isinstance(council, dict) or not council:
+        raise PolicyError(f"council {path} must be a non-empty JSON object keyed by lens")
+    return council
 
 
 def is_number(value):
@@ -111,8 +134,9 @@ def validate_review(review, weights):
         return ["review is not a JSON object"]
     name = review.get("reviewer", "?")
     problems = []
-    if not isinstance(review.get("provider"), str) or not review["provider"].strip():
-        problems.append(f"{name}: provider is missing")
+    for field in ("provider_instance", "model"):
+        if not isinstance(review.get(field), str) or not review[field].strip():
+            problems.append(f"{name}: {field} is missing")
     if review.get("verdict") not in VERDICTS:
         problems.append(f"{name}: verdict must be one of {sorted(VERDICTS)}")
     scores = review.get("scores")
@@ -148,7 +172,25 @@ def weighted_score(scores, weights):
     return sum(scores[c] * w for c, w in weights.items()) / total
 
 
-def evaluate(reviews, revision, plan_risk_flags, policy, load_problems=()):
+def council_mismatches(reviews, council):
+    """Name each review not written by its lens's configured connection and model."""
+    found = []
+    for review in reviews:
+        lens = review["reviewer"]
+        seat = council.get(lens)
+        if not isinstance(seat, dict):
+            found.append(f"{lens}: no Council seat for this reviewer")
+            continue
+        target = seat.get("target", {})
+        expected = (target.get("providerInstanceId"), target.get("model"))
+        actual = (review["provider_instance"].strip(), review["model"].strip())
+        if actual != expected:
+            found.append(f"{lens}: written by {actual[1]} via {actual[0]}, "
+                         f"Council seats {expected[1]} via {expected[0]}")
+    return found
+
+
+def evaluate(reviews, revision, plan_risk_flags, policy, council, load_problems=()):
     """Apply the gate rules in order and return the decision record."""
     weights = policy["weights"]
     problems = list(load_problems)
@@ -165,7 +207,8 @@ def evaluate(reviews, revision, plan_risk_flags, policy, load_problems=()):
         if valid:
             summaries.append({
                 "reviewer": name,
-                "provider": review["provider"],
+                "provider_instance": review["provider_instance"],
+                "model": review["model"],
                 "verdict": review["verdict"],
                 "score": round(weighted_score(review["scores"], weights), 1),
             })
@@ -177,7 +220,7 @@ def evaluate(reviews, revision, plan_risk_flags, policy, load_problems=()):
     average = round(sum(scores) / len(scores), 1) if scores else None
     lowest = min(scores) if scores else None
     spread = round(max(scores) - min(scores), 1) if scores else None
-    providers = {s["provider"].strip().lower() for s in summaries}
+    models = {model_identity(s["model"]) for s in summaries}
     unknown_flags = [f for f in risk_flags if f not in policy.get("risk_flags", {})]
     tiers = {f: flag_tier(policy, f) for f in risk_flags}
     escalating = [f for f in risk_flags if tiers[f] == "escalate"]
@@ -192,7 +235,7 @@ def evaluate(reviews, revision, plan_risk_flags, policy, load_problems=()):
             "plan_score": average,
             "lowest": lowest,
             "spread": spread,
-            "providers": sorted(providers),
+            "models": sorted(models),
             "reviews": summaries,
             "blockers": blockers,
             "issues": issues,
@@ -204,12 +247,15 @@ def evaluate(reviews, revision, plan_risk_flags, policy, load_problems=()):
     # Rule 1: anything that makes the round untrustworthy or needs the owner.
     if problems:
         return decide("escalate", "invalid-reviews", problems)
+    mismatches = council_mismatches(reviews, council)
+    if mismatches:
+        return decide("escalate", "council-mismatch", mismatches)
     if len(reviews) < policy["min_reviews"]:
         return decide("escalate", "too-few-reviews",
                       [f"{len(reviews)} reviews, policy needs {policy['min_reviews']}"])
-    if len(providers) < policy["min_providers"]:
-        return decide("escalate", "single-provider",
-                      [f"{len(providers)} providers, policy needs {policy['min_providers']}"])
+    if len(models) < policy["min_models"]:
+        return decide("escalate", "too-few-models",
+                      [f"{len(models)} distinct models, policy needs {policy['min_models']}"])
     if blockers:
         return decide("escalate", "blockers", [f"{len(blockers)} Blocker(s) need the owner"])
     if escalating:
@@ -255,6 +301,8 @@ def main(argv=None):
                         help="a Risk flag the Plan declares; repeat for several")
     parser.add_argument("--policy", action="append", default=[],
                         help="a policy override file; repeat to layer several")
+    parser.add_argument("--council", type=Path,
+                        help="the round's resolved Council (round-N/council.json); required unless --check")
     parser.add_argument("--out", type=Path)
     parser.add_argument("--check", action="store_true",
                         help="only validate the reviews: print each problem, exit 1 when there is any")
@@ -272,18 +320,21 @@ def main(argv=None):
 
     if args.revision is None:
         parser.error("--revision is required unless --check is given")
+    if args.council is None:
+        parser.error("--council is required unless --check is given")
     if args.revision < 0:
         parser.error("--revision must be 0 or more")
     if not args.reviews_dir.is_dir():
         parser.error(f"{args.reviews_dir} is not a directory")
     try:
         policy = load_policy(args.policy)
+        council = load_council(args.council)
     except PolicyError as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
 
     reviews, problems = load_reviews(args.reviews_dir)
-    record = evaluate(reviews, args.revision, args.risk_flags, policy, problems)
+    record = evaluate(reviews, args.revision, args.risk_flags, policy, council, problems)
     record["policy"] = policy
 
     out = args.out or args.reviews_dir.resolve().parent / "decision.json"
