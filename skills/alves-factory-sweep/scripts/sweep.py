@@ -20,13 +20,17 @@ writes the actions it decides (to --out, default stdout):
 - start-triage: an assigned Upstream ticket never triaged, or one whose triage filed no
   Factory ticket. Triage only reads repos, so the sweep's caller runs `start` itself; the
   rest wait in `deferred` for the next pass.
+- pin_account: an entry's repo has no pin of its GitHub account in its git config, or one
+  naming another account (github_account.py --pin). T3 prepares a worktree with a plain
+  `git fetch`, before any skill runs, so without the pin it fetches with gh's active account.
 
 A --project match shared by several entries (one Upstream tracker feeding several repos)
 selects them all: each entry's Factory tickets are read from its own Linear project, and
 the Upstream tracker is searched once for the prefix.
 
 `apply` makes the restart, retrigger, block, done and note writes on Linear, skipping any
-ticket whose status changed since `plan` read it. It never starts a run.
+ticket whose status changed since `plan` read it, and writes each pin_account pin. It never
+starts a run.
 
 Exit codes: 0 when the plan or apply finished, 1 on an API error, 2 on unusable config.
 """
@@ -35,6 +39,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -128,9 +133,9 @@ def hours(delta):
 
 # Decisions
 
-def decide(projects, now, limits):
-    """Return the sweep's actions for a gathered snapshot (see gather) at time now."""
-    actions, starts = [], []
+def decide(projects, now, limits, pins=()):
+    """Return the sweep's actions for a gathered snapshot (see gather and gather_pins) at time now."""
+    actions, starts = list(pins), []
     for project in projects:
         for t in project["tickets"]:
             actions_for_ticket(t, project, now, limits, actions, starts)
@@ -400,12 +405,53 @@ def gather(entries, team, limits, linear, runner=github_account.run, triage_root
     return projects, notes
 
 
+def gather_pins(entries, runner=github_account.run, which=shutil.which):
+    """A pin_account action for each repo whose GitHub account pin is missing or stale, and
+    notes for the repos the sweep will not pin. Read-only."""
+    pins, notes, repos = [], [], {}
+    for entry in entries:
+        repos.setdefault(entry["repo"], []).append(entry)
+    for repo, group in repos.items():
+        label = " ".join(dict.fromkeys(e.get("linear_project") or e["match"] for e in group))
+        named = sorted({e["github_account"] for e in group if e.get("github_account")})
+        if len(named) > 1:
+            notes.append(f"{label}: account not pinned: its entries name different github_accounts: {', '.join(named)}")
+            continue
+        try:
+            if named:
+                account = named[0]
+            else:
+                account = github_account.resolve(repo, None, runner)["account"]
+                notes.append(f"{label}: no github_account in projects.json; detected {account}, pin it there")
+            status = github_account.pin_status(repo, account, runner, which)
+        except github_account.AccountError as error:
+            notes.append(f"{label}: account not pinned: {error}")
+            continue
+        if status["state"] == "ssh":
+            notes.append(f"{label}: origin uses SSH, so its account is not pinned; T3's fetch uses SSH keys")
+        elif status["state"] == "foreign":
+            notes.append(f"{label}: has a local credential helper the factory did not write; left alone")
+        elif status["state"] in ("missing", "stale"):
+            was = f"pinned to {status['pinned']}" if status["pinned"] else "not pinned"
+            pins.append({"kind": "pin_account", "ticket": None, "ref": None, "project": group[0]["match"],
+                         "repo": repo, "account": account, "from_status": status["pinned"], "to_status": account,
+                         "reason": f"{was}, so T3's worktree fetch would use gh's active account"})
+    return pins, notes
+
+
 # Applying
 
-def apply(sweep, linear):
-    """Make the Linear writes of every non-start action; return what was done or skipped."""
+def apply(sweep, linear, runner=github_account.run, which=shutil.which):
+    """Make the Linear writes of every non-start action and write each pin; return what was done or skipped."""
     done = []
     for action in sweep["actions"]:
+        if action["kind"] == "pin_account":
+            try:
+                github_account.pin(action["repo"], action["account"], runner, which)
+                done.append({**action, "applied": True})
+            except github_account.AccountError as error:
+                done.append({**action, "applied": False, "why": str(error)})
+            continue
         current = linear.issue(action["ticket"])["state"]["name"]
         if current != action["from_status"]:
             done.append({**action, "applied": False, "why": f"status is now {current}"})
@@ -416,11 +462,11 @@ def apply(sweep, linear):
         if action["to_status"]:
             linear.set_state(action["ticket"], action["to_status"])
         done.append({**action, "applied": True})
-    return [{k: a[k] for k in ("kind", "ticket", "from_status", "to_status", "applied") if k in a}
+    return [{k: a[k] for k in ("kind", "ticket", "repo", "from_status", "to_status", "applied") if k in a}
             | ({"why": a["why"]} if "why" in a else {}) for a in done]
 
 
-def main(argv=None, linear=None, runner=github_account.run, triage_root=TRIAGE_ROOT):
+def main(argv=None, linear=None, runner=github_account.run, triage_root=TRIAGE_ROOT, which=shutil.which):
     parser = argparse.ArgumentParser(description="Sweep the factory's stuck, dropped and finished work.")
     sub = parser.add_subparsers(dest="command", required=True)
     p = sub.add_parser("plan")
@@ -436,14 +482,15 @@ def main(argv=None, linear=None, runner=github_account.run, triage_root=TRIAGE_R
     linear = linear or linear_mod.Linear()
     try:
         if args.command == "apply":
-            result = apply(json.loads(read_text(args.plan_file)), linear)
+            result = apply(json.loads(read_text(args.plan_file)), linear, runner, which)
         else:
             config, limits = load_config(args.config)
             select_notes = []
             entries = select(config, args.matches, select_notes)
             now = parse_time(args.now) if args.now else datetime.now(timezone.utc)
             projects, notes = gather(entries, config.get("linear_team", "Alves"), limits, linear, runner, triage_root)
-            result = decide(projects, now, limits) | {"notes": select_notes + notes}
+            pins, pin_notes = gather_pins(entries, runner, which)
+            result = decide(projects, now, limits, pins) | {"notes": select_notes + pin_notes + notes}
     except ConfigError as error:
         print(f"error: {error}", file=sys.stderr)
         return 2

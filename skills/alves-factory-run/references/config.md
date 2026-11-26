@@ -122,6 +122,16 @@ The factory's scripts that reach the network take `--account` and fetch the toke
 
 Never `gh auth switch`: it changes the machine's active account under concurrent runs and the owner's own terminal.
 
+### Account pin
+
+T3 prepares a worktree with a plain `git fetch` before any skill runs, and gh's global credential helper only gives out the **active** account's token. So each repo **pins** its account in its own git config ([ADR 0008](../../../docs/factory/adr/0008-repo-pins-its-github-account.md)):
+
+```sh
+python <run-skill-dir>/scripts/github_account.py <repo> --account <github_account> --pin
+```
+
+It writes an empty `credential.https://<host>.helper` (resetting the global helpers), a helper that prints `gh auth token --hostname <host> --user <account>`, and the mark `alves-factory.githubaccount`, then proves a plain `git ls-remote origin` works with no token set. The JSON gains `"pin": {"state", "written"}`. It writes nothing, and exits 1, for an SSH `origin` (git uses SSH keys) or a local helper without the mark (the owner's own). Run it once when onboarding a repo; after that the sweep keeps every entry's pin, rewriting one that is missing or names another account.
+
 ## One prefix, several repos
 
 When one Upstream tracker holds work for several repos and no ticket field says which (the tracker's components or labels go unused), give each repo its own entry with the same `match` and a distinct `linear_project` ([ADR 0007](../../../docs/factory/adr/0007-triage-chooses-the-repo.md)):

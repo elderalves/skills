@@ -107,8 +107,12 @@ _Avoid_: publishing, undrafting, approval
 ## Operations
 
 **Sweep**:
-A scheduled pass over the factory's record that catches what the event triggers missed: it restarts a run that died, starts a run whose trigger never fired, and closes the Factory ticket of a merged PR. It acts only on statuses, times and PR states, and starts at most one run per pass.
+A scheduled pass over the factory's record that catches what the event triggers missed: it restarts a run that died, starts a run whose trigger never fired, closes the Factory ticket of a merged PR, and repairs each repo's Account pin. It acts only on statuses, times and PR states, and starts at most one run per pass.
 _Avoid_: cron, reconciler, janitor
+
+**Account pin**:
+A repo's own git config naming the GitHub account every plain `git` command in it uses, written by `github_account.py --pin` and kept by the sweep. It lets T3 prepare a worktree before any skill runs, when gh's active account cannot reach the repo.
+_Avoid_: credential override, account switch
 
 **Stale limit**:
 How long a ticket may sit in a running status (Planning, Plan Review, In Progress) with no factory comment before the sweep judges its run dead and restarts it, once.
