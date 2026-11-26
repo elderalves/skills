@@ -11,13 +11,13 @@ Every requirement and acceptance criterion in the Upstream ticket maps to a task
 The approach fits the repo's existing patterns, module boundaries, glossary and ADRs, and is the simplest one that meets the requirements. Alternatives were weighed where the choice was not obvious.
 
 **`grounding`: codebase grounding**
-Every file, function, interface, command and convention the Plan relies on exists in the repo as the Plan describes it. Score only what you verified.
+Every file, function, interface, command and convention the Plan relies on exists in the repo as the Plan describes it, and every **Evidence** capture is a path on the block's local server. Score only what you verified.
 
 **`feasibility`: implementation feasibility**
 The tasks are ordered so each builds on finished work, sized so each is independently verifiable, and complete: an implementer unfamiliar with the repo could follow them without inventing missing steps.
 
 **`testing`: testing and acceptance**
-Each task names the tests that prove it, every acceptance criterion has a check, and the verification commands exist and fit the repo's test setup.
+Each task names the tests that prove it, every acceptance criterion has a check, and the verification commands exist and fit the repo's test setup. A Plan whose tasks change what a user sees has an **Evidence** block whose start command and capture paths exist in the repo.
 
 **`risk`: risk and rollback**
 The Plan names what could go wrong and how to undo it, declares every Risk flag the work carries, and its Assumptions are reversible and stated.

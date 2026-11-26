@@ -1,6 +1,6 @@
 # Factory Plan format
 
-A factory Plan is a `writing-plans` plan with factory frontmatter, a factory header, three extra sections and a revision log. Where this file and `writing-plans` disagree, this file wins.
+A factory Plan is a `writing-plans` plan with factory frontmatter, a factory header, three extra sections, an Evidence block when the change is visual, and a revision log. Where this file and `writing-plans` disagree, this file wins.
 
 ## Overrides to `writing-plans`
 
@@ -56,8 +56,22 @@ In this order: the `writing-plans` header, **Global Constraints** and **Review F
 3. The `writing-plans` **File Structure**.
 4. The `writing-plans` **tasks**.
 5. **Risks and rollback**: what could go wrong in production, how each risk is detected, and how the change is undone. A change that cannot be undone by a revert says what else it takes.
-6. **Out of scope**: work a reader might expect that this Plan deliberately leaves out, each with a reason.
-7. **Revision log**: absent at revision 0; each Revise appends one line per Issue: `r<N> · <criterion> · fixed|rebutted · <reason>`.
+6. **Evidence**: only when a task changes something a user sees rendered (a page, a component, a story, a style); leave it out otherwise. It tells `alves-factory-implement` what to screenshot before and after the change, for the PR.
+
+   **Start:** `yarn --cwd packages/ui storybook --port 6007`, ready at `http://127.0.0.1:6007`
+
+   | Capture | Path | Viewport | Section | Setup | New |
+   |---|---|---|---|---|---|
+   | Plain and outline docs | `/iframe.html?id=components-button--docs&viewMode=docs` | 1280×800 | Subtle button → Disabled button | — | no |
+   | Outline appearances | `/iframe.html?id=components-button--outline-appearances&viewMode=story` | 1280×800 | — | focus "Primary outline" | yes |
+
+   - **Start**: the repo's own command that serves the app locally, and the localhost URL it is ready at. Every capture is a path on that server.
+   - At most five captures: the pages a reviewer most needs to see. Viewport 1280×800, plus a 375-wide capture only when the ticket concerns mobile.
+   - **Section**: on a long page, the headings that bound the part to shoot (`<from heading> → <first heading after it>`), or `—` for the full page. Pick bounds that exist both before and after, so the two shots compare.
+   - **Setup**: what to do before the shot, in prose (focus a button, submit the form), or `—`.
+   - **New**: `yes` when the page does not exist at `base_commit`, so it has no before.
+7. **Out of scope**: work a reader might expect that this Plan deliberately leaves out, each with a reason.
+8. **Revision log**: absent at revision 0; each Revise appends one line per Issue: `r<N> · <criterion> · fixed|rebutted · <reason>`.
 
 ## Blocked form
 

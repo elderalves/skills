@@ -77,3 +77,13 @@ _Avoid_: verdict, approval, routing
 **Escalation**:
 A Gate decision that hands a Plan to the owner, with its Blockers, to answer on the Factory ticket.
 _Avoid_: human review, handoff
+
+## Implementation
+
+**Evidence block**:
+The section of a Plan that names how to serve the app locally and which pages to screenshot before and after the change. Only a Plan that changes what a user sees has one.
+_Avoid_: screenshot plan, visual spec
+
+**Evidence branch**:
+The orphan branch, beside the factory branch in the project repo, that holds an implementation run's before/after screenshots so the PR body can show them.
+_Avoid_: assets branch, screenshot branch
