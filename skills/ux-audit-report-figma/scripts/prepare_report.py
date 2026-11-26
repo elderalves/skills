@@ -7,7 +7,12 @@ from urllib.parse import urlsplit
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "ux-validation" / "scripts"))
-from render_report import finding_groups, load_report, report_takeaways
+from render_report import PRIORITIES, finding_groups, load_report, report_takeaways
+
+
+PRIORITY_LABELS = {priority: f"{priority} · {meaning}" for priority, meaning in PRIORITIES.items()}
+PRIORITY_SUMMARY = "Priority reflects how much each issue affects the task under review."
+ACTION_PLAN_VARIANTS = {"fix": "need", "improvement": "improve", "idea": "idea"}
 
 
 def project_setting(run_dir):
@@ -56,13 +61,38 @@ def evidence_step(number, step, run_dir, finding_numbers):
     return result
 
 
+def action_plan(groups):
+    cards_by_phase = {phase: {} for phase in (*PRIORITIES, "Explore")}
+    for group in groups:
+        for finding in group["findings"]:
+            category = "improvement" if group["heading"] is None else finding["category"]
+            variant = ACTION_PLAN_VARIANTS.get(category)
+            if variant is None:
+                continue
+            phase = cards_by_phase[finding.get("priority", "Explore")]
+            phase.setdefault(variant, []).append({
+                "findingNumber": finding["number"],
+                "text": finding["what"],
+            })
+    return [
+        {
+            "label": PRIORITY_LABELS.get(phase, phase),
+            "cards": [{"variant": variant, "items": items} for variant, items in cards.items()],
+        }
+        for phase, cards in cards_by_phase.items()
+        if cards
+    ]
+
+
 def prepare(run_dir):
     source = run_dir / "report.json"
     report = load_report(source)
     setting = project_setting(run_dir)
     steps = report["steps"]
+    findings = report["findings"]
+    groups = finding_groups(report)
     citing_findings = {}
-    for number, finding in enumerate(report["findings"], 1):
+    for number, finding in enumerate(findings, 1):
         for step_number in dict.fromkeys(finding["steps"]):
             citing_findings.setdefault(step_number, []).append(number)
     return {
@@ -73,8 +103,10 @@ def prepare(run_dir):
         "scope": report["scope"],
         "outcome": report["outcome"],
         "takeaways": report_takeaways(report),
-        "findings": report["findings"],
-        "findingGroups": finding_groups(report),
+        "findings": findings,
+        "findingGroups": groups,
+        "priorityLabels": PRIORITY_LABELS,
+        "prioritySummary": PRIORITY_SUMMARY if any("priority" in finding for finding in findings) else None,
         "coverage": report["coverage"],
         "evidence": [
             evidence_step(number, steps[number - 1], run_dir, citing_findings[number])
@@ -85,6 +117,7 @@ def prepare(run_dir):
             for number, step in enumerate(steps, 1)
             if "clip" in step
         ],
+        "actionPlan": action_plan(groups),
     }
 
 

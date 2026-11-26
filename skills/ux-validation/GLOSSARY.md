@@ -14,7 +14,11 @@ One attempt to validate the UX of a scoped task, with its recorded outcome, walk
 
 **Figma audit report**
 
-An editable presentation of a validation run's task outcome, findings grouped by category, supporting evidence, and next steps when the run supports them.
+An editable presentation of a validation run that includes the task outcome, findings grouped by category, supporting evidence, and an Action Plan.
+
+**Action Plan**
+
+The section of a Figma audit report that organizes proposed next steps from a validation run into phases.
 
 **Walkthrough**
 
@@ -38,7 +42,7 @@ A problem that prevents reliable task completion or creates a consequential erro
 
 **Priority**
 
-The P0–P3 ranking of a problem by its impact on the task under review.
+A ranking of issues by their impact on the task under review. The four levels are P0 (Stops the task), P1 (Serious obstacle), P2 (Avoidable effort), and P3 (Minor friction).
 
 **Evidence**
 

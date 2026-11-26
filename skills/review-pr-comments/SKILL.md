@@ -14,6 +14,9 @@ Review the GitHub PR at the URL in the arguments. Seven Reviewers, each with a n
 - **Verified Finding**: a Finding that survived the adversarial verification pass ([references/verification.md](references/verification.md)).
 - **Comment**: a Verified Finding rendered per [references/conventional-comments.md](references/conventional-comments.md), placed inline on the diff or in the Review body's General section.
 - **Review**: the single GitHub review that carries every Comment of one run.
+- **Review body**: the top-level text of the Review, the part shown above the inline Comments. It holds the Opener and the General Comments. Avoid calling it the "main comment".
+- **Opener**: the short first-person paragraph at the top of the Review body, written in the user's voice. It is posted. Avoid calling it the "summary".
+- **Run report**: the process metadata of one run (counts per Reviewer, skipped or failed Reviewers, verification drops, CI, spec sources, excluded files). It is shown only in the terminal, never posted.
 
 ## Arguments
 
