@@ -1,0 +1,15 @@
+{
+  "requirements": {
+    "target": { "providerInstanceId": "codex", "model": "gpt-6.2-sol" }
+  },
+  "architecture": {
+    "target": { "providerInstanceId": "claudeAgent", "model": "claude-opus-5-5" }
+  },
+  "testing-risk": {
+    "target": {
+      "providerInstanceId": "opencode",
+      "model": "opencode-go/muse-spark-1.3-contributor",
+      "options": { "variant": "high" }
+    }
+  }
+}

@@ -1,25 +1,51 @@
 {
   "linear_team": "Alves",
+  "councils": {
+    "widgets": {
+      "requirements": {
+        "target": { "providerInstanceId": "claudeAgent", "model": "claude-opus-5-5" }
+      },
+      "architecture": {
+        "target": { "providerInstanceId": "claudeAgent", "model": "claude-sonnet-5-5" }
+      },
+      "testing-risk": {
+        "target": {
+          "providerInstanceId": "codex",
+          "model": "gpt-6.1-sol",
+          "options": { "reasoningEffort": "high" }
+        }
+      }
+    }
+  },
   "projects": [
     {
       "match": "PROJ-",
-      "repo": "C:/code/proj",
+      "repo": "~/Projects/acme/repos/proj",
       "base_branch": "main",
       "upstream": { "type": "jira", "site": "example.atlassian.net" },
+      "linear_project": "Proj",
       "github_account": "my-work-account"
     },
     {
       "match": "linear-project:My Side Project",
-      "repo": "C:/code/side-project",
+      "repo": "~/Projects/me/repos/side-project",
       "base_branch": "main",
-      "upstream": { "type": "linear" }
+      "upstream": { "type": "linear" },
+      "council": {
+        "testing-risk": {
+          "target": { "providerInstanceId": "claudeAgent", "model": "claude-haiku-5-5" }
+        }
+      }
     },
     {
       "match": "github:acme/widgets#",
-      "repo": "C:/code/widgets",
+      "repo": "~/Projects/acme/repos/widgets",
       "base_branch": "main",
       "upstream": { "type": "github" },
-      "policy": "~/.factory/policies/widgets.json"
+      "linear_project": "Widgets",
+      "policy": "~/.alves-factory/policies/widgets.json",
+      "pr_ready": "auto",
+      "council": "widgets"
     }
   ]
 }

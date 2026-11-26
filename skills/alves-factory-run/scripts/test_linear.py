@@ -43,6 +43,26 @@ class LinearTests(unittest.TestCase):
             {"issue": newer}, {"issue": older}, {"issue": newer}]}}})
         self.assertEqual([i["identifier"] for i in Linear(fake).find_by_url("u")], ["ALV-1", "ALV-2"])
 
+    def create_fake(self, projects):
+        return Fake({
+            "teams(": {"teams": {"nodes": [{"id": "team1", "name": "Alves"}]}},
+            "projects(": {"projects": {"nodes": projects}},
+            "issueCreate": {"issueCreate": {"success": True, "issue": {"id": "i1", "identifier": "ALV-1"}}},
+            "attachmentLinkURL": {"attachmentLinkURL": {"success": True}},
+            "issue(id": {"issue": issue()},
+        })
+
+    def test_create_files_the_ticket_in_its_project(self):
+        fake = self.create_fake([{"id": "p1", "name": "Metronome"}])
+        Linear(fake).create("Alves", "t", "https://x/browse/DXPX-1", project="Metronome")
+        self.assertEqual(fake.called("issueCreate")[0]["input"]["projectId"], "p1")
+
+    def test_create_with_unknown_project_writes_nothing(self):
+        fake = self.create_fake([])
+        with self.assertRaises(LinearError):
+            Linear(fake).create("Alves", "t", "https://x/browse/DXPX-1", project="Nope")
+        self.assertEqual(fake.called("issueCreate"), [])
+
     def test_set_label_replaces_same_prefix_only(self):
         fake = Fake({
             "issueLabels(": {"issueLabels": {"nodes": [{"id": "new", "name": "gate:implement", "team": None}]}},
@@ -112,6 +132,30 @@ class LinearTests(unittest.TestCase):
         self.assertEqual(linear_mod.api_key({"LINEAR_API_KEY": "generic"}, env_file), "lin_api_file")
         with self.assertRaises(LinearError):
             linear_mod.api_key({}, env_file.with_name("missing.env"))
+
+    def test_list_issues_reports_when_each_entered_its_status(self):
+        node = {
+            "id": "i1", "identifier": "ALV-13", "url": "u", "createdAt": "2026-01-01T00:00:00Z",
+            "updatedAt": "2026-01-03T00:00:00Z", "state": {"name": "In Review"},
+            "attachments": {"nodes": [{"url": "https://x.atlassian.net/browse/PCS-1", "title": "PCS-1"}]},
+            "history": {"nodes": [
+                {"createdAt": "2026-01-02T00:00:00Z", "toState": {"name": "In Review"}},
+                {"createdAt": "2026-01-01T12:00:00Z", "toState": {"name": "In Progress"}},
+                {"createdAt": "2026-01-01T06:00:00Z", "toState": {"name": "In Review"}},
+                {"createdAt": "2026-01-02T01:00:00Z", "toState": None},
+            ]},
+            "comments": {"nodes": [
+                {"createdAt": "2026-01-02T00:00:00Z", "body": f"{MARKER}\n\nlater"},
+                {"createdAt": "2026-01-01T00:00:00Z", "body": "owner"},
+            ]},
+        }
+        fake = Fake({"teams(": {"teams": {"nodes": [{"id": "team1", "name": "Alves"}]}},
+                     "issues(": {"issues": {"nodes": [node]}}})
+        [found] = Linear(fake).list_issues("Alves", "AgileKit", ["In Review"])
+        self.assertEqual(found["entered_state_at"], "2026-01-02T00:00:00Z")
+        self.assertEqual(found["attachment_urls"], ["https://x.atlassian.net/browse/PCS-1"])
+        self.assertEqual([c["from_factory"] for c in found["comments"]], [False, True])
+        self.assertEqual(fake.called("issues(")[0]["states"], ["In Review"])
 
     def test_cli_reports_errors_with_exit_1(self):
         def boom(query, variables):

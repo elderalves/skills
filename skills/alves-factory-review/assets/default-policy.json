@@ -8,7 +8,7 @@
     "risk": 10
   },
   "min_reviews": 3,
-  "min_providers": 3,
+  "min_models": 1,
   "implement": {
     "min_average": 90,
     "min_lowest": 85,
@@ -17,11 +17,32 @@
   "escalate_below_average": 75,
   "max_revisions": 2,
   "risk_flags": {
-    "data-migration": "Migrates, backfills or deletes persisted data",
-    "auth": "Touches authentication, permissions or secrets",
-    "public-contract": "Changes something consumed outside this repo: a published package API, an HTTP API, an event or a file format others read",
-    "infrastructure": "Changes infrastructure, CI or production configuration",
-    "large-change": "Changes more than 15 files",
-    "dependency": "Adds or upgrades a dependency"
+    "data-migration": {
+      "tier": "escalate",
+      "description": "Migrates, backfills or deletes persisted data"
+    },
+    "auth": {
+      "tier": "escalate",
+      "description": "Touches authentication, permissions or secrets"
+    },
+    "public-contract": {
+      "tier": "escalate",
+      "description": "Breaks or changes something consumed outside this repo (a published package API, an HTTP API, an event or a file format others read): removes or renames it, or changes behaviour its consumers rely on. A backwards-compatible addition, such as a new optional prop or a new export, is no Risk flag"
+    },
+    "infrastructure": {
+      "tier": "strict",
+      "description": "Changes infrastructure, CI or production configuration"
+    },
+    "large-change": {
+      "tier": "strict",
+      "description": "Changes more than 15 files"
+    },
+    "dependency": {
+      "tier": "strict",
+      "description": "Adds or upgrades a dependency"
+    }
+  },
+  "strict": {
+    "min_risk_score": 90
   }
 }

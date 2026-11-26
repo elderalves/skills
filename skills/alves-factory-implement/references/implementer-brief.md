@@ -8,6 +8,7 @@ The prompt for the subagent that implements one task. Send this brief, then the 
 - `PLAN.md`, naming exactly which parts to read: the header (Goal, Architecture, Tech Stack), **Global Constraints**, **Review Focus**, the **Interfaces** blocks of the earlier tasks, and this task;
 - `ASSUMPTIONS.md`;
 - the task's **minor fixes**, when the run has any (step 3 of `alves-factory-implement`);
+- in the diff review's fix pass ([diff-review.md](diff-review.md)), the major findings to fix, which stand in for the task, and the **Files** blocks of the tasks they concern as the scope;
 - how long the repo's checks take, when the run has measured it, and the fast command for single test files.
 
 ## Your job

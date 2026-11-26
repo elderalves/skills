@@ -5,7 +5,7 @@ The exact shape of one reviewer's output file. `gate.py` rejects a round with a 
 ```json
 {
   "reviewer": "architecture",
-  "provider": "anthropic",
+  "provider_instance": "claudeAgent",
   "model": "claude-opus-5-5",
   "scores": {
     "requirements": 90,
@@ -42,8 +42,8 @@ The exact shape of one reviewer's output file. `gate.py` rejects a round with a 
 ## Fields
 
 - `reviewer`: your lens: `requirements`, `architecture` or `testing-risk`.
-- `provider`: the provider of the model that wrote this review, in lowercase (`anthropic`, `openai`, `google`). Record the real provider, even when it substitutes for the lens's preferred one: the gate counts distinct providers.
-- `model`: the model id that wrote this review.
+- `provider_instance`: the T3 connection your seat dispatched you through, exactly as supplied (`codex`, `claudeAgent`, `opencode`, `acpRegistry_github_copilot`).
+- `model`: your seat's model ID, exactly as supplied (`claude-opus-5-5`, `opencode-go/muse-spark-1.3-contributor`). The gate escalates a review whose `provider_instance` and `model` differ from its lens's seat.
 - `scores`: an integer from 0 to 100 for every criterion key in the [rubric](rubric.md), no more and no fewer.
 - `rationale`: one to three sentences of checked evidence per criterion.
 - `verdict`, which `gate.py` checks against the lists below:
