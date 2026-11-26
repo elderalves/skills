@@ -20,7 +20,7 @@
   "projects": [
     {
       "match": "PROJ-",
-      "repo": "C:/code/proj",
+      "repo": "~/Projects/acme/repos/proj",
       "base_branch": "main",
       "upstream": { "type": "jira", "site": "example.atlassian.net" },
       "linear_project": "Proj",
@@ -28,7 +28,7 @@
     },
     {
       "match": "linear-project:My Side Project",
-      "repo": "C:/code/side-project",
+      "repo": "~/Projects/me/repos/side-project",
       "base_branch": "main",
       "upstream": { "type": "linear" },
       "council": {
@@ -39,7 +39,7 @@
     },
     {
       "match": "github:acme/widgets#",
-      "repo": "C:/code/widgets",
+      "repo": "~/Projects/acme/repos/widgets",
       "base_branch": "main",
       "upstream": { "type": "github" },
       "linear_project": "Widgets",

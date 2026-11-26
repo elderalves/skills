@@ -35,6 +35,7 @@ RUN_SCRIPTS = Path(__file__).resolve().parents[2] / "alves-factory-run" / "scrip
 sys.path.insert(0, str(RUN_SCRIPTS))
 import github_account  # noqa: E402
 from factory_home import factory_home  # noqa: E402
+import project as project_mod  # noqa: E402
 import linear as linear_mod  # noqa: E402
 
 CONFIG = factory_home() / "projects.json"
@@ -251,7 +252,10 @@ def select(config, matches):
         found = [e for e in config["projects"] if e.get("match") == match]
         if not found:
             raise ConfigError(f"no projects.json entry has match {match!r}")
-        entries.append(found[0])
+        try:
+            entries.append(project_mod.resolve_entry(found[0]))
+        except project_mod.ProjectError as error:
+            raise ConfigError(str(error)) from error
     return entries
 
 

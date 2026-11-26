@@ -80,10 +80,16 @@ read everything else with the skill's tools. Never ask questions:
 finish with the skill's final reply.
 ```
 
-Generate the token once, in PowerShell, and keep it only in Task C's filter and the Jira rule:
+Generate the token once and keep it only in Task C's filter and the Jira rule. In PowerShell:
 
 ```powershell
 -join ((1..40) | ForEach-Object { '{0:x}' -f (Get-Random -Maximum 16) })
+```
+
+On Linux or macOS:
+
+```sh
+openssl rand -hex 20
 ```
 
 **The Jira Automation rule** (Project settings → Automation → Create rule; one rule can cover several projects when created as a multi-project rule):
@@ -131,9 +137,9 @@ Wired so far: Gerador de Escala (A, B, E; Native, so no C) and AgileKit (`PCS-`,
 
 ## Prerequisites on the runner
 
-- The factory home, `~/.alves-factory/` (or `ALVES_FACTORY_HOME`), holding `projects.json` ([factory config](../../skills/alves-factory-run/references/config.md#factory-home)).
+- The factory home, `~/.alves-factory/` (or `ALVES_FACTORY_HOME`), holding `projects.json` ([factory config](../../skills/alves-factory-run/references/config.md#factory-home)), and every project's checkout at its `repo` (`project.py --match <match>` confirms it).
 - `LINEAR_ALVES_API_KEY` in the environment T3 Code starts with (restart T3 after setting it), or in `~/.alves-factory/.env`.
-- The six `alves-factory-*` skills visible to the orchestrator model (`~/.claude/skills` junctions to `~/.agents/skills`).
+- The six `alves-factory-*` skills visible to the orchestrator model (`~/.claude/skills/<skill>` linked to `~/.agents/skills/<skill>`: a junction on Windows, `ln -s` on Linux and macOS).
 - The project's `github_account` logged in to `gh`.
 - For a Jira project: `acli` signed in to the project's `upstream.site` (`acli jira auth status`). `acli` holds one site for the whole machine, so only the projects on that site can run; a run on another site's project stops with both sites named.
 - Enable and authenticate in T3 every connection a Council seat uses. The default Council uses Codex (`gpt-6.2-sol`), Claude (`claude-opus-5-5`) and OpenCode Go Muse Spark 1.3 Contributor (through T3's `opencode` connection). Shared, named and per-project seats and Go billing routing are in [factory config](../../skills/alves-factory-run/references/config.md#council-targets); the optional model floor is in [policy files](../../skills/alves-factory-run/references/config.md#council-fidelity-and-model-floor).

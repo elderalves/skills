@@ -16,7 +16,7 @@ Maps an Upstream ticket to the project the factory works in. Example: [projects.
   "projects": [
     {
       "match": "PROJ-",
-      "repo": "C:/code/proj",
+      "repo": "~/Projects/acme/repos/proj",
       "base_branch": "main",
       "upstream": { "type": "jira", "site": "example.atlassian.net" },
       "linear_project": "Proj",
@@ -31,7 +31,7 @@ Maps an Upstream ticket to the project the factory works in. Example: [projects.
 - `councils`: optional named Councils that project entries refer to by name. See **Council targets** below.
 - `projects`: tried in order; the first whose `match` is a prefix of the Upstream reference wins.
   - `match`: a Jira key prefix (`PROJ-`), `github:<owner>/<repo>#` for GitHub Issues, or `linear-project:<Linear project name>` for **Native tickets**. A `linear-project:` entry matches a Factory ticket in that Linear project with no Upstream link; it never matches by prefix.
-  - `repo`: absolute path of the project checkout on the runner.
+  - `repo`: path of the project checkout on the runner: absolute, or starting with `~/` for the home directory, so one `projects.json` serves Windows, Linux and macOS. Keep checkouts at `~/Projects/<org>/repos/<name>` on every machine (on Windows a junction from `~/Projects` to another drive or folder works).
   - `base_branch`: the branch implementation branches start from and PRs target.
   - `upstream.type`: `jira`, `github` or `linear` (Native tickets), per [trackers.md](trackers.md); `upstream.site` is the Jira site, which `acli` must be signed in to.
   - `linear_project`: the Linear project the factory files this entry's Factory tickets in (`linear.py create --project`), so per-project T3 triggers see them. Native entries leave it out: their `match` names the project.
@@ -122,7 +122,16 @@ The factory's scripts that reach the network take `--account` and fetch the toke
 
 Never `gh auth switch`: it changes the machine's active account under concurrent runs and the owner's own terminal.
 
-No matching project, a missing `repo`, or an unknown `upstream.type` stops the run as **Blocked**, naming the reference that failed to match.
+## Resolving the project
+
+Find the run's entry with the resolver, never by reading `projects.json` by hand:
+
+```sh
+python <alves-factory-run>/scripts/project.py --ref <upstream-ref>
+python <alves-factory-run>/scripts/project.py --linear-project <name>   # a Native ticket
+```
+
+It applies the match rules above and prints the entry as JSON with `repo` absolute for this machine. Use that `repo`, never the raw value. Exit `2` (no matching entry, an unreadable config, or a `repo` that is not a directory here) and an unknown `upstream.type` stop the run as **Blocked**, with the resolver's message.
 
 ## Policy files
 

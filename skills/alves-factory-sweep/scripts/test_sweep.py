@@ -250,6 +250,14 @@ class Config(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("NOPE-", err.getvalue())
 
+    def test_cli_stops_when_the_repo_is_not_on_this_machine(self):
+        path = self.write({"projects": [{**JIRA, "repo": "~/no-such-factory-checkout"}]})
+        err = io.StringIO()
+        with redirect_stdout(io.StringIO()), redirect_stderr(err):
+            code = sweep.main(["plan", "--project", "PCS-", "--config", str(path)], linear=FakeLinear())
+        self.assertEqual(code, 2)
+        self.assertIn("not a directory on this machine", err.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()

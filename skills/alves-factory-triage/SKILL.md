@@ -18,13 +18,13 @@ Run one **triage**: from an assigned Upstream ticket to a **Triage decision** of
 
 ## Process
 
-1. **Match the project.** The argument must be an upstream ref that a `projects.json` entry matches per [config.md](../alves-factory-run/references/config.md), and not a `linear-project:` entry (Native tickets start in Linear and skip triage). Otherwise reply that no project matches and stop.
+1. **Match the project.** `python ../alves-factory-run/scripts/project.py --ref <upstream ref>`, per [config.md](../alves-factory-run/references/config.md#resolving-the-project). It never matches a `linear-project:` entry: Native tickets start in Linear and skip triage. On exit `2`, reply with its message and stop.
 
 2. **Check for an existing Factory ticket.** `linear.py find-by-url <upstream-url>`. When one exists, the factory already tracks this ticket and the owner drives it from Linear: reply with its identifier and status, and stop.
 
 3. **Read the Upstream ticket** per [trackers.md](../alves-factory-run/references/trackers.md) into `~/.alves-factory/triage/<ref, with / # : replaced by ->/ticket.md`, emptying that directory first. A failed read stops triage (guardrails).
 
-4. **Gather evidence and decide.** Work in the current directory when it is a checkout of the entry's `repo` (T3 Code starts each run in its own worktree), otherwise in the configured `repo`, read-only: fetch with the entry's GitHub account per [config.md](../alves-factory-run/references/config.md#github-account) and read `origin/<base_branch>` without checking anything out. Search the repo for what the ticket names (components, files, endpoints, messages), and check whether the work already exists there. Then apply [references/criteria.md](references/criteria.md). **Done when** the decision has a reason that cites the ticket text and the repo evidence behind it.
+4. **Gather evidence and decide.** Work in the current directory when it is a checkout of the entry's `repo` (T3 Code starts each run in its own worktree), otherwise in the `repo` the resolver printed, read-only: fetch with the entry's GitHub account per [config.md](../alves-factory-run/references/config.md#github-account) and read `origin/<base_branch>` without checking anything out. Search the repo for what the ticket names (components, files, endpoints, messages), and check whether the work already exists there. Then apply [references/criteria.md](references/criteria.md). **Done when** the decision has a reason that cites the ticket text and the repo evidence behind it.
 
 5. **Act on the decision.** Write `triage.md` beside `ticket.md`: the decision, the reason and the evidence. Its first line under the heading is `- **Decision:** work`, `unsure` or `not work`, exactly so: `alves-factory-sweep` reads it to find a **work** decision that never became a Factory ticket, and to leave a **not work** one alone.
    - **work:** invoke `alves-factory-run` with the upstream ref. It creates the Factory ticket and plans it.
