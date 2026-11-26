@@ -48,12 +48,18 @@ def merge(base, override):
     return merged
 
 
+def read_text(path):
+    """A file's text, honouring a UTF-8 or UTF-16 byte-order mark (PowerShell's `>` writes UTF-16)."""
+    data = Path(path).expanduser().read_bytes()
+    return data.decode("utf-16" if data[:2] in (b"\xff\xfe", b"\xfe\xff") else "utf-8-sig")
+
+
 def load_policy(paths):
-    policy = json.loads(DEFAULT_POLICY.read_text(encoding="utf-8"))
+    policy = json.loads(read_text(DEFAULT_POLICY))
     for path in paths:
         try:
-            override = json.loads(Path(path).read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as error:
+            override = json.loads(read_text(path))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
             raise PolicyError(f"cannot read policy {path}: {error}") from error
         if not isinstance(override, dict):
             raise PolicyError(f"policy {path} must be a JSON object")
@@ -101,8 +107,8 @@ def flag_tier(policy, flag):
 
 def load_council(path):
     try:
-        council = json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
+        council = json.loads(read_text(path))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
         raise PolicyError(f"cannot read council {path}: {error}") from error
     if not isinstance(council, dict) or not council:
         raise PolicyError(f"council {path} must be a non-empty JSON object keyed by lens")
@@ -118,8 +124,8 @@ def load_reviews(reviews_dir):
     reviews, problems = [], []
     for path in sorted(Path(reviews_dir).glob("*.json")):
         try:
-            review = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as error:
+            review = json.loads(read_text(path))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
             problems.append(f"{path.name}: unreadable ({error})")
             continue
         if isinstance(review, dict):

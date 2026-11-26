@@ -314,5 +314,20 @@ class Cli(unittest.TestCase):
                 self.assertIn(message, err)
 
 
+class ReadText(unittest.TestCase):
+    def test_every_encoding_a_shell_redirect_writes(self):
+        # PowerShell 5.1's `>` writes UTF-16; Out-File -Encoding utf8 adds a BOM.
+        with tempfile.TemporaryDirectory() as tmp:
+            for encoding in ("utf-8", "utf-8-sig", "utf-16", "utf-16-le"):
+                with self.subTest(encoding):
+                    path = Path(tmp) / "council.json"
+                    text = '{"lens": "Prüfung"}'
+                    data = text.encode(encoding)
+                    if encoding == "utf-16-le":
+                        data = b"\xff\xfe" + data
+                    path.write_bytes(data)
+                    self.assertEqual(json.loads(gate.read_text(path)), {"lens": "Prüfung"})
+
+
 if __name__ == "__main__":
     unittest.main()

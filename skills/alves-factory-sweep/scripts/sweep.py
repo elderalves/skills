@@ -221,9 +221,15 @@ def closed_comment(pr, state):
 
 # Gathering (read-only)
 
+def read_text(path):
+    """A file's text, honouring a UTF-8 or UTF-16 byte-order mark (PowerShell's `>` writes UTF-16)."""
+    data = Path(path).expanduser().read_bytes()
+    return data.decode("utf-16" if data[:2] in (b"\xff\xfe", b"\xfe\xff") else "utf-8-sig")
+
+
 def load_config(path):
     try:
-        config = json.loads(Path(path).expanduser().read_text(encoding="utf-8-sig"))
+        config = json.loads(read_text(path))
     except (OSError, ValueError) as error:
         raise ConfigError(f"cannot read {path}: {error}") from error
     if not isinstance(config, dict) or not isinstance(config.get("projects"), list):
@@ -373,7 +379,7 @@ def main(argv=None, linear=None, runner=github_account.run, triage_root=TRIAGE_R
     linear = linear or linear_mod.Linear()
     try:
         if args.command == "apply":
-            result = apply(json.loads(args.plan_file.read_text(encoding="utf-8-sig")), linear)
+            result = apply(json.loads(read_text(args.plan_file)), linear)
         else:
             config, limits = load_config(args.config)
             entries = select(config, args.matches)

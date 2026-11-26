@@ -108,6 +108,14 @@ Use the account **per command**, on every network git or gh command of the run (
 GH_TOKEN=$(gh auth token --hostname <host> --user <account>) git push …
 ```
 
+In PowerShell, which has no inline variable prefix:
+
+```powershell
+$env:GH_TOKEN = (gh auth token --hostname <host> --user <account>); git push …
+```
+
+The factory's scripts that reach the network take `--account` and fetch the token themselves.
+
 Never `gh auth switch`: it changes the machine's active account under concurrent runs and the owner's own terminal.
 
 No matching project, a missing `repo`, or an unknown `upstream.type` stops the run as **Blocked**, naming the reference that failed to match.

@@ -12,6 +12,14 @@ import ready
 
 DECISION = {"decision": "implement", "rule": "meets-bar", "risk_flags": []}
 CLEAN = {"result": "clean", "pass": 0, "reasons": ["3 reviews, no major finding"]}
+URL = "https://github.com/acme/widgets/blob/" + "a" * 40 + "/docs-after.png?raw=true"
+PUBLISHED = {"commit": "a" * 40, "branch": "factory/PCS-1-evidence", "images": {"docs-after.png": URL}}
+BODY = f"""## Evidence
+
+| Before | After |
+|---|---|
+| _new page_ | ![Docs, after]({URL}) |
+"""
 GREEN = [{"name": "Build & Test", "bucket": "pass"}, {"name": "license/snyk", "bucket": "pass"}]
 
 
@@ -21,13 +29,15 @@ def verification(**fields):
         "deviations": ["import path corrected"],
         "ci_fixes": 0,
         "evidence": {"required": True, "missing": []},
+        "process_deviations": [],
     }
     base.update(fields)
     return base
 
 
-def run(pr_ready="auto", decision=DECISION, verify=None, checks=GREEN, flags=(), diff=CLEAN):
-    return ready.evaluate(pr_ready, decision, verify or verification(), checks, flags, diff)
+def run(pr_ready="auto", decision=DECISION, verify=None, checks=GREEN, flags=(), diff=CLEAN,
+        body=BODY, published=PUBLISHED):
+    return ready.evaluate(pr_ready, decision, verify or verification(), checks, flags, diff, body, published)
 
 
 class Evaluate(unittest.TestCase):
@@ -43,6 +53,14 @@ class Evaluate(unittest.TestCase):
     def test_no_evidence_block_needs_no_screenshots(self):
         verify = verification(evidence={"required": False, "missing": ["no app to serve"]})
         self.assertTrue(run(verify=verify)["ready"])
+
+    def test_a_body_without_images_needs_no_published_evidence(self):
+        verify = verification(evidence={"required": False, "missing": []})
+        self.assertTrue(run(verify=verify, body="## Evidence\n\n183 tests pass\n", published=None)["ready"])
+
+    def test_html_and_markdown_images_both_count(self):
+        body = BODY + f'<img alt="Docs" src="{URL}">\n'
+        self.assertTrue(run(body=body)["ready"])
 
     def test_missing_evidence_field_means_none_required(self):
         verify = verification()
@@ -77,6 +95,13 @@ class Evaluate(unittest.TestCase):
          "diff review is unresolved: architecture: dead branch"),
         ("a diff reviewer failed", {"diff": {"result": "incomplete", "reasons": ["testing-risk: no review"]}},
          "diff review is incomplete: testing-risk: no review"),
+        ("a link to a file GitHub does not serve",
+         {"body": BODY.replace("docs-after.png?", "docs-after.png%0D?")}, "screenshot link not verified: "),
+        ("images in the body but none published", {"published": None}, f"screenshot link not verified: {URL}"),
+        ("evidence push failed",
+         {"verify": verification(evidence={"required": True, "missing": ["evidence push failed: rejected"]}),
+          "published": None, "body": "Screenshots unavailable: evidence push failed\n"},
+         "screenshot missing: evidence push failed: rejected"),
         ("subagents unavailable",
          {"verify": verification(process_deviations=["subagent dispatch failed; tasks implemented in-session"])},
          "process deviation: subagent dispatch failed"),
@@ -113,13 +138,19 @@ class Main(unittest.TestCase):
             code = ready.main(list(argv))
         return code, out.getvalue(), err.getvalue()
 
-    def args(self, verify=None, checks=GREEN, mode="auto", diff=CLEAN):
+    def args(self, verify=None, checks=GREEN, mode="auto", diff=CLEAN, body=BODY, published=PUBLISHED):
         argv = ["--pr-ready", mode, "--decision", self.write("decision.json", DECISION),
                 "--verification", self.write("verification.json", verify or verification())]
         if diff is not None:
             argv += ["--diff-review", self.write("diff-review.json", diff)]
         if checks is not None:
             argv += ["--checks", self.write("checks.json", checks)]
+        if body is not None:
+            path = self.dir / "pr-body.md"
+            path.write_text(body, encoding="utf-8")
+            argv += ["--pr-body", str(path)]
+        if published is not None:
+            argv += ["--evidence", self.write("evidence.json", published)]
         return argv
 
     def test_writes_and_prints_the_result(self):
@@ -130,7 +161,7 @@ class Main(unittest.TestCase):
         self.assertEqual(json.loads(out.read_text(encoding="utf-8")), json.loads(printed))
 
     def test_dry_run_without_checks(self):
-        code, printed, _ = self.call(*self.args(checks=None))
+        code, printed, _ = self.call(*self.args(checks=None, body=None, published=None))
         self.assertEqual(code, 0)
         self.assertFalse(json.loads(printed)["ready"])
 
@@ -146,6 +177,7 @@ class Main(unittest.TestCase):
             ("negative fixes", verification(ci_fixes=-1)),
             ("evidence not an object", verification(evidence=["x"])),
             ("process deviations not a list", verification(process_deviations="x")),
+            ("process deviations left out", {k: v for k, v in verification().items() if k != "process_deviations"}),
         ]
         for name, verify in bad:
             with self.subTest(name):
@@ -161,6 +193,22 @@ class Main(unittest.TestCase):
         code, printed, _ = self.call(*argv)
         self.assertEqual(code, 0)
         self.assertTrue(json.loads(printed)["ready"])
+
+    def test_reads_files_powershell_wrote_as_utf16(self):
+        argv = self.args()
+        path = Path(argv[argv.index("--checks") + 1])
+        path.write_text(path.read_text(encoding="utf-8"), encoding="utf-16")
+        code, printed, _ = self.call(*argv)
+        self.assertEqual(code, 0)
+        self.assertTrue(json.loads(printed)["ready"])
+
+    def test_checks_without_a_pr_body_are_unusable(self):
+        code, _, err = self.call(*self.args(body=None))
+        self.assertEqual(code, 2)
+        self.assertIn("--pr-body", err)
+
+    def test_malformed_evidence_is_unusable(self):
+        self.assertEqual(self.call(*self.args(published={"images": ["x"]}))[0], 2)
 
     def test_malformed_checks_are_unusable(self):
         self.assertEqual(self.call(*self.args(checks=[{"name": "x"}]))[0], 2)

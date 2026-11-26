@@ -38,7 +38,7 @@ FINDING_TEXT = ("file", "problem", "evidence", "fix")
 
 
 def read_json(path):
-    return json.loads(Path(path).read_text(encoding="utf-8-sig"))
+    return json.loads(gate.read_text(path))
 
 
 def load_reviews(reviews_dir):

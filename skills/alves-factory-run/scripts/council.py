@@ -37,7 +37,7 @@ class ConfigError(Exception):
 
 def read_object(path):
     try:
-        value = json.loads(Path(path).expanduser().read_text(encoding="utf-8"))
+        value = json.loads(gate.read_text(path))
     except (OSError, ValueError) as error:
         raise ConfigError(f"cannot read {path}: {error}") from error
     if not isinstance(value, dict):

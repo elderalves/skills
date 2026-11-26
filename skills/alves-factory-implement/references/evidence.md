@@ -19,24 +19,20 @@ Record every capture, taken or skipped with its reason, in `verification.md`.
 
 ## Evidence branch
 
-The PNGs go to the **evidence branch**, named after the factory branch plus `-evidence` (`factory/PCS-6132-evidence`, same case): an orphan branch in the project repo holding only screenshots, so the PR diff never carries them. Build its commit with plumbing, which leaves the checkout's working tree, index and branch untouched:
+The PNGs go to the **evidence branch**, named after the factory branch plus `-evidence` (`factory/PCS-6132-evidence`, same case): an orphan branch in the project repo holding only screenshots, so the PR diff never carries them. Publish them with the script, never by hand:
 
 ```sh
-cd <checkout>
-tree=$(for f in <work-dir>/implementation/evidence/*.png; do
-  printf '100644 blob %s\t%s\n' "$(git hash-object -w "$f")" "$(basename "$f")"
-done | git mktree)
-parent=$(GH_TOKEN=… git fetch origin <factory-branch>-evidence 2>/dev/null && echo "-p FETCH_HEAD")
-commit=$(git commit-tree "$tree" $parent -m "<upstream-ref>: evidence screenshots")
-GH_TOKEN=… git push origin "$commit:refs/heads/<factory-branch>-evidence"
+python <skill-dir>/scripts/publish_evidence.py --checkout <checkout> --evidence-dir <work-dir>/implementation/evidence --branch <factory-branch> --message "<upstream-ref>: evidence screenshots" --repo <owner>/<repo> --account <account> --out <work-dir>/implementation/evidence.json
 ```
 
-- Push with the run's GitHub account, as every network command ([config.md](../../alves-factory-run/references/config.md#github-account)).
-- A retried run adds a commit on top of the existing evidence branch (the `-p FETCH_HEAD` above) and never force-pushes; the PR body then points at the new commit.
-- Link each image by that commit's SHA, never the branch name: `https://github.com/<owner>/<repo>/blob/<commit>/<file>?raw=true`. It renders for everyone who can see the repo, private ones included.
+It builds the commit with git plumbing, which leaves the checkout's working tree, index and branch untouched; fetches the run's account's token itself ([config.md](../../alves-factory-run/references/config.md#github-account)); and pushes only a commit it built, so it can never delete the branch. After the push it reads the commit's tree back from GitHub and checks every file is there under its exact name and size. `evidence.json` then holds `{"commit", "branch", "images": {"<file>": "<url>"}}`.
+
+- Exit 1 means the push or the read-back failed: a failure per **Failures** below, with the error it printed as the reason. Exit 2 means an input is unusable (no PNG, a file name that is not a slug), which also counts as a failure.
+- A retried run stacks a commit on the existing evidence branch and never force-pushes; the PR body then points at the new commit.
+- Each URL pins that commit's SHA, never the branch name, and renders for everyone who can see the repo, private ones included. The PR body copies them from `evidence.json` ([pr-body.md](pr-body.md)).
 - The factory never deletes the evidence branch: the PR's images live on it. The owner may delete it after merge.
 - In a dry run, the PNGs stay in `implementation/evidence/` and nothing is pushed.
 
 ## Failures
 
-Screenshots are evidence, not the run's work: an app that will not start, a browser that crashes, or an evidence push that fails ends the capture, never the run. Stop any server you started, record the reason in `verification.md`, and go on. The PR body's Evidence then says `Screenshots unavailable: <reason>` above the test evidence, and the Factory ticket's comment says the same.
+Screenshots are evidence, not the run's work: an app that will not start, a browser that crashes, or an evidence push that fails ends the capture, never the run. Stop any server you started, record the reason in `verification.md`, add it to `verification.json`'s `evidence.missing` (`"evidence push failed: <error>"` for a failed push), and go on. The PR body's Evidence then says `Screenshots unavailable: <reason>` above the test evidence, the Factory ticket's comment says the same, and the PR stays a draft ([ready-check.md](ready-check.md)).
