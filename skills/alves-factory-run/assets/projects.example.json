@@ -43,7 +43,7 @@
       "base_branch": "main",
       "upstream": { "type": "github" },
       "linear_project": "Widgets",
-      "policy": "~/.factory/policies/widgets.json",
+      "policy": "~/.alves-factory/policies/widgets.json",
       "pr_ready": "auto",
       "council": "widgets"
     }

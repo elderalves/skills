@@ -6,7 +6,7 @@ argument-hint: <match> [<match> ...] [--dry-run]
 
 Run one **sweep**: a pass over the factory's record that catches what the event triggers missed. Triggers are webhooks into one runner, so a delivery can be lost (Linear stops retrying after three tries), a run can die mid-stage and leave its ticket in a status that says it is running, and nothing else watches a PR after it opens. The sweep finds each case from facts a script reads, fixes what a script can, and starts at most one run per pass. It never waits on a human. Terms follow the factory glossary (`~/.agents/docs/factory/GLOSSARY.md`); the Linear record, the trackers and the config are shared with `alves-factory-run`:
 
-- [linear-record.md](../alves-factory-run/references/linear-record.md), through `python ../alves-factory-run/scripts/linear.py` (needs `LINEAR_ALVES_API_KEY`, as an environment variable or a line in `~/.factory/.env`; use `python3` where `python` is not Python 3);
+- [linear-record.md](../alves-factory-run/references/linear-record.md), through `python ../alves-factory-run/scripts/linear.py` (needs `LINEAR_ALVES_API_KEY`, as an environment variable or a line in `~/.alves-factory/.env`; use `python3` where `python` is not Python 3);
 - [trackers.md](../alves-factory-run/references/trackers.md);
 - [config.md](../alves-factory-run/references/config.md).
 
@@ -27,12 +27,12 @@ Run one **sweep**: a pass over the factory's record that catches what the event 
 1. **Plan.** Resolve `<skill-dir>` to this skill's directory, then run:
 
    ```sh
-   python <skill-dir>/scripts/sweep.py plan --project <match> [--project <match> ...] --out ~/.factory/sweep/last.json
+   python <skill-dir>/scripts/sweep.py plan --project <match> [--project <match> ...] --out ~/.alves-factory/sweep/last.json
    ```
 
-   It reads the entries' Factory tickets (Ready, Planning, Plan Review, Plan Approved, In Progress, In Review, Team Review), each review-status ticket's factory PR on `factory/<ref slug>` with the entry's GitHub account ([config.md](../alves-factory-run/references/config.md#github-account)), and, for a Jira entry, the open tickets assigned to the owner in the last `triage_window_days` with their triage records in `~/.factory/triage/<ref slug>/triage.md`. When `acli` is signed in to another site, Jira is skipped with a note ([trackers.md](../alves-factory-run/references/trackers.md)). Exit `2` is unusable config and exit `1` an API error: stop and reply with it. In a dry run, reply with the plan and stop.
+   It reads the entries' Factory tickets (Ready, Planning, Plan Review, Plan Approved, In Progress, In Review, Team Review), each review-status ticket's factory PR on `factory/<ref slug>` with the entry's GitHub account ([config.md](../alves-factory-run/references/config.md#github-account)), and, for a Jira entry, the open tickets assigned to the owner in the last `triage_window_days` with their triage records in `~/.alves-factory/triage/<ref slug>/triage.md`. When `acli` is signed in to another site, Jira is skipped with a note ([trackers.md](../alves-factory-run/references/trackers.md)). Exit `2` is unusable config and exit `1` an API error: stop and reply with it. In a dry run, reply with the plan and stop.
 
-2. **Apply.** `python <skill-dir>/scripts/sweep.py apply ~/.factory/sweep/last.json`. It posts each action's factory comment and sets its status, skipping any ticket whose status changed since step 1 read it:
+2. **Apply.** `python <skill-dir>/scripts/sweep.py apply ~/.alves-factory/sweep/last.json`. It posts each action's factory comment and sets its status, skipping any ticket whose status changed since step 1 read it:
 
    | Action | When | Writes |
    |---|---|---|
@@ -47,7 +47,7 @@ Run one **sweep**: a pass over the factory's record that catches what the event 
 
 ## Settings
 
-The limits are optional fields of a top-level `sweep` object in `~/.factory/projects.json`; leave any out for its default:
+The limits are optional fields of a top-level `sweep` object in `~/.alves-factory/projects.json`; leave any out for its default:
 
 ```json
 {

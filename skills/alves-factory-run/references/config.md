@@ -1,8 +1,12 @@
 # Factory config
 
-The owner's factory config lives outside every project repo, in `~/.factory/`. Client repos carry no factory config.
+The owner's factory config lives outside every project repo, in `~/.alves-factory/`. Client repos carry no factory config.
 
-## `~/.factory/projects.json`
+## Factory home
+
+The factory home is `~/.alves-factory/`, or the directory named by the `ALVES_FACTORY_HOME` environment variable when it is set (`scripts/factory_home.py`). Every `~/.alves-factory/` path in the factory's skills means this directory. It holds the config (`projects.json`, the optional `policy.json`, `policies/` and `.env`) and the run state (`runs/`, `triage/`, `sweep/`). Nothing falls back to the old `~/.factory/`, which belongs to Factory's Droid CLI ([ADR 0005](../../../docs/factory/adr/0005-factory-home-is-alves-factory.md)): a missing config stops the script with exit `2`, naming the path it tried.
+
+## `~/.alves-factory/projects.json`
 
 Maps an Upstream ticket to the project the factory works in. Example: [projects.example.json](../assets/projects.example.json).
 
@@ -16,7 +20,7 @@ Maps an Upstream ticket to the project the factory works in. Example: [projects.
       "base_branch": "main",
       "upstream": { "type": "jira", "site": "example.atlassian.net" },
       "linear_project": "Proj",
-      "policy": "~/.factory/policies/proj.json"
+      "policy": "~/.alves-factory/policies/proj.json"
     }
   ]
 }
@@ -41,7 +45,7 @@ Maps an Upstream ticket to the project the factory works in. Example: [projects.
 Each Council has three lenses: `requirements`, `architecture` and `testing-risk`. Each lens has a **seat**: the T3 connection and the exact model that review it. Seats resolve in this order, each layer replacing whole lenses and leaving the others as they were:
 
 1. The [bundled default Council](../../alves-factory-review/assets/default-council.json): `gpt-6.2-sol` via `codex` for requirements, `claude-opus-5-5` via `claudeAgent` for architecture, `opencode-go/muse-spark-1.3-contributor` via `opencode` for testing/risk.
-2. The top-level `council` in `~/.factory/projects.json`, for every project.
+2. The top-level `council` in `~/.alves-factory/projects.json`, for every project.
 3. The matched project entry's `council`: either the name of an entry in the top-level `councils`, or an inline object.
 
 A named Council lets several entries share one set of seats, such as the three Jira prefixes of one repo. It may set only some lenses; the rest come from the layers below. A name missing from `councils` stops the run Blocked; it never falls back to the default. A seat's options are replaced with it, so a new connection never inherits the previous one's options.
@@ -86,7 +90,7 @@ The resolver snapshots the merged seats for one run and checks them against the 
 python <run-skill-dir>/scripts/council.py --project "PROJ-" [--policy <file> ...] --out <work-dir>/council.json
 ```
 
-`--project` is the exact `match` value of the entry already selected by the run. `--policy` takes the same layers the run passes to the review (see **Policy files**). `--config <file>` overrides the default `~/.factory/projects.json`. Exit `2` identifies an unreadable file, an invalid seat, an unknown Council name, a missing project, or a Council that cannot reach the policy's `min_models`. The resolver validates structure; the review checks each connection, model and option against T3's catalog before dispatch, and an unavailable seat stops the run Blocked.
+`--project` is the exact `match` value of the entry already selected by the run. `--policy` takes the same layers the run passes to the review (see **Policy files**). `--config <file>` overrides the default `~/.alves-factory/projects.json`. Exit `2` identifies an unreadable file, an invalid seat, an unknown Council name, a missing project, or a Council that cannot reach the policy's `min_models`. The resolver validates structure; the review checks each connection, model and option against T3's catalog before dispatch, and an unavailable seat stops the run Blocked.
 
 The run passes `--council <work-dir>/council.json` to every review round. Each round writes the seats with the options actually sent to `round-<N>/council.json`, and the gate checks every review against it. Config edits affect new runs; an active run keeps its snapshot.
 
@@ -125,7 +129,7 @@ No matching project, a missing `repo`, or an unknown `upstream.type` stops the r
 The gate's policy layers, each deep-merged over the one before ([gate defaults](../../alves-factory-review/assets/default-policy.json)):
 
 1. the bundled default policy;
-2. `~/.factory/policy.json`, when present;
+2. `~/.alves-factory/policy.json`, when present;
 3. the matched project's `policy`, when set.
 
 Pass layers 2 and 3 to `alves-factory-review` as `--policy` files, in that order.
@@ -139,7 +143,7 @@ The gate checks two things about who reviewed, and neither one selects models:
 
 `min_reviews` (default `3`) still requires all three reviews. Older decision records may show `too-few-providers` or `single-provider`, from the provider count `min_models` replaced; a policy file that still sets `min_providers` stops the run Blocked.
 
-To keep one model from reviewing every lens of one project, put the floor in a project policy file, such as `~/.factory/policies/metronome.json`, and set that project's `policy` field to its path:
+To keep one model from reviewing every lens of one project, put the floor in a project policy file, such as `~/.alves-factory/policies/metronome.json`, and set that project's `policy` field to its path:
 
 ```json
 {
@@ -147,4 +151,4 @@ To keep one model from reviewing every lens of one project, put the floor in a p
 }
 ```
 
-Set it in `~/.factory/policy.json` to apply it to every project; a project file wins over the owner's. Preserve other fields when editing either file. Each `decision.json` includes the effective merged `policy` and the distinct `models`, which explain the applied floor.
+Set it in `~/.alves-factory/policy.json` to apply it to every project; a project file wins over the owner's. Preserve other fields when editing either file. Each `decision.json` includes the effective merged `policy` and the distinct `models`, which explain the applied floor.

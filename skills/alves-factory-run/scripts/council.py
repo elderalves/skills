@@ -1,6 +1,6 @@
 """Resolve Council targets from bundled defaults, owner settings and one project.
 
-    python council.py --project PCS- [--config ~/.factory/projects.json] [--policy FILE ...] [--out FILE]
+    python council.py --project PCS- [--config ~/.alves-factory/projects.json] [--policy FILE ...] [--out FILE]
 
 Layers, each replacing whole lenses: the bundled default Council, the top-level
 `council`, then the project entry's `council` (an inline object, or the name of
@@ -24,6 +24,7 @@ from pathlib import Path
 REVIEW_SKILL = Path(__file__).resolve().parents[2] / "alves-factory-review"
 sys.path.insert(0, str(REVIEW_SKILL / "scripts"))
 import gate  # noqa: E402  (shares the gate's policy loading and model identity)
+from factory_home import factory_home  # noqa: E402
 
 DEFAULT_COUNCIL = REVIEW_SKILL / "assets" / "default-council.json"
 LENSES = {"requirements", "architecture", "testing-risk"}
@@ -131,7 +132,7 @@ def billing_warnings(council, sources):
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Resolve the Council targets for one factory project.")
     parser.add_argument("--project", required=True, help="the selected projects.json entry's exact match value")
-    parser.add_argument("--config", type=Path, default=Path.home() / ".factory" / "projects.json")
+    parser.add_argument("--config", type=Path, default=factory_home() / "projects.json")
     parser.add_argument("--policy", action="append", default=[],
                         help="a gate policy layer, as passed to the review; repeat to layer several")
     parser.add_argument("--out", type=Path, help="write the resolved config into the run's work dir")

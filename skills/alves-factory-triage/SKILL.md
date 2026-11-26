@@ -6,7 +6,7 @@ argument-hint: <upstream-ref>
 
 Run one **triage**: from an assigned Upstream ticket to a **Triage decision** of **work**, **unsure** or **not work**, with no human in the loop. Terms follow the factory glossary (`~/.agents/docs/factory/GLOSSARY.md`). The config, trackers and Linear record are shared with `alves-factory-run`:
 
-- [config.md](../alves-factory-run/references/config.md) for `~/.factory/projects.json`;
+- [config.md](../alves-factory-run/references/config.md) for `~/.alves-factory/projects.json`;
 - [trackers.md](../alves-factory-run/references/trackers.md) for reading the Upstream ticket;
 - [linear-record.md](../alves-factory-run/references/linear-record.md), through `python ../alves-factory-run/scripts/linear.py` (needs `LINEAR_ALVES_API_KEY`; use `python3` where `python` is not Python 3).
 
@@ -22,7 +22,7 @@ Run one **triage**: from an assigned Upstream ticket to a **Triage decision** of
 
 2. **Check for an existing Factory ticket.** `linear.py find-by-url <upstream-url>`. When one exists, the factory already tracks this ticket and the owner drives it from Linear: reply with its identifier and status, and stop.
 
-3. **Read the Upstream ticket** per [trackers.md](../alves-factory-run/references/trackers.md) into `~/.factory/triage/<ref, with / # : replaced by ->/ticket.md`, emptying that directory first. A failed read stops triage (guardrails).
+3. **Read the Upstream ticket** per [trackers.md](../alves-factory-run/references/trackers.md) into `~/.alves-factory/triage/<ref, with / # : replaced by ->/ticket.md`, emptying that directory first. A failed read stops triage (guardrails).
 
 4. **Gather evidence and decide.** Work in the current directory when it is a checkout of the entry's `repo` (T3 Code starts each run in its own worktree), otherwise in the configured `repo`, read-only: fetch with the entry's GitHub account per [config.md](../alves-factory-run/references/config.md#github-account) and read `origin/<base_branch>` without checking anything out. Search the repo for what the ticket names (components, files, endpoints, messages), and check whether the work already exists there. Then apply [references/criteria.md](references/criteria.md). **Done when** the decision has a reason that cites the ticket text and the repo evidence behind it.
 

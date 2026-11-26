@@ -34,10 +34,11 @@ from pathlib import Path
 RUN_SCRIPTS = Path(__file__).resolve().parents[2] / "alves-factory-run" / "scripts"
 sys.path.insert(0, str(RUN_SCRIPTS))
 import github_account  # noqa: E402
+from factory_home import factory_home  # noqa: E402
 import linear as linear_mod  # noqa: E402
 
-CONFIG = Path.home() / ".factory" / "projects.json"
-TRIAGE_ROOT = Path.home() / ".factory" / "triage"
+CONFIG = factory_home() / "projects.json"
+TRIAGE_ROOT = factory_home() / "triage"
 DEFAULT_LIMITS = {
     "stale_planning_hours": 3,
     "stale_implementing_hours": 6,

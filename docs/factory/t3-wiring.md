@@ -16,11 +16,11 @@ Each task belongs to one T3 project (one repo), so a project gets its own A, B, 
 
 | Field | Value |
 |---|---|
-| Runs on | the machine holding the repo, `~/.factory/` and the skills |
+| Runs on | the machine holding the repo, `~/.alves-factory/` and the skills |
 | Destination | New thread each run |
 | Project | the T3 project for the repo (e.g. `metronome`) |
 | Workspace | Create a new worktree |
-| Base branch | From `<base_branch>` (remote), as in `~/.factory/projects.json` |
+| Base branch | From `<base_branch>` (remote), as in `~/.alves-factory/projects.json` |
 | Model | Claude Opus 5.5, High: the run's orchestrator, which also plans and implements; the Council's seats are separate, started through `delegate_task` |
 | Schedule | On webhook (Task E: interval) |
 
@@ -131,7 +131,8 @@ Wired so far: Gerador de Escala (A, B, E; Native, so no C) and AgileKit (`PCS-`,
 
 ## Prerequisites on the runner
 
-- `LINEAR_ALVES_API_KEY` in the environment T3 Code starts with (restart T3 after setting it), or in `~/.factory/.env`.
+- The factory home, `~/.alves-factory/` (or `ALVES_FACTORY_HOME`), holding `projects.json` ([factory config](../../skills/alves-factory-run/references/config.md#factory-home)).
+- `LINEAR_ALVES_API_KEY` in the environment T3 Code starts with (restart T3 after setting it), or in `~/.alves-factory/.env`.
 - The six `alves-factory-*` skills visible to the orchestrator model (`~/.claude/skills` junctions to `~/.agents/skills`).
 - The project's `github_account` logged in to `gh`.
 - For a Jira project: `acli` signed in to the project's `upstream.site` (`acli jira auth status`). `acli` holds one site for the whole machine, so only the projects on that site can run; a run on another site's project stops with both sites named.

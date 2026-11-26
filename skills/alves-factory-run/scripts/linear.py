@@ -1,7 +1,7 @@
 """Read and write the factory's record on Linear (the Factory tracker) via the GraphQL API.
 
 Needs a Linear personal API key: the LINEAR_ALVES_API_KEY environment variable, or a
-LINEAR_ALVES_API_KEY=... line in ~/.factory/.env. Every command prints JSON.
+LINEAR_ALVES_API_KEY=... line in the factory home's .env (factory_home.py). Every command prints JSON.
 
     python linear.py find-by-url <upstream-url>
     python linear.py get <issue>
@@ -25,11 +25,13 @@ import sys
 import urllib.request
 from pathlib import Path
 
+from factory_home import factory_home
+
 
 API_URL = "https://api.linear.app/graphql"
 MARKER = "[alves-factory]"
 KEY_NAME = "LINEAR_ALVES_API_KEY"
-ENV_FILE = Path.home() / ".factory" / ".env"
+ENV_FILE = factory_home() / ".env"
 
 ISSUE_FIELDS = """
   id identifier title description url createdAt

@@ -8,9 +8,9 @@ Run one **Council round** on the Plan in a factory work dir and return its **Gat
 
 ## Inputs
 
-- `<work-dir>`: the run's work dir (`~/.factory/runs/<upstream-ref>/`, outside the project repo), holding `ticket.md` (the Upstream ticket), `PLAN.md` and `ASSUMPTIONS.md`. The current directory is the project repo the Plan targets.
+- `<work-dir>`: the run's work dir (`~/.alves-factory/runs/<upstream-ref>/`, outside the project repo), holding `ticket.md` (the Upstream ticket), `PLAN.md` and `ASSUMPTIONS.md`. The current directory is the project repo the Plan targets.
 - `--revision <N>`: `0` for the first Plan, `1` after the first Revise, and so on. Round `N` lives in `<work-dir>/round-<N>/`.
-- `--policy <file>`: policy overrides to pass to the gate, in order (the caller supplies `~/.factory/policy.json` and any project override).
+- `--policy <file>`: policy overrides to pass to the gate, in order (the caller supplies `~/.alves-factory/policy.json` and any project override).
 - `--council <file>`: the review targets resolved by the caller from [project config](../alves-factory-run/references/config.md#council-targets). If omitted, use [default-council.json](assets/default-council.json).
 
 The Plan's declared Risk flags are the `risk_flags` list in `PLAN.md`'s YAML frontmatter.

@@ -6,7 +6,7 @@ argument-hint: <factory-ticket | upstream-ref> [--dry-run | --promote]
 
 Run one **implementation run**: from an approved Plan to a PR, promoted ready for the project team when the **ready check** passes and left a draft for the owner otherwise. The run ends in **Team Review**, **In Review** or **Blocked** and never waits for a human. Terms follow the factory glossary (`~/.agents/docs/factory/GLOSSARY.md`). The Linear record, the Upstream trackers and the config are shared with `alves-factory-run`:
 
-- [linear-record.md](../alves-factory-run/references/linear-record.md), through `python ../alves-factory-run/scripts/linear.py` (needs `LINEAR_ALVES_API_KEY`, as an environment variable or a line in `~/.factory/.env`; use `python3` where `python` is not Python 3);
+- [linear-record.md](../alves-factory-run/references/linear-record.md), through `python ../alves-factory-run/scripts/linear.py` (needs `LINEAR_ALVES_API_KEY`, as an environment variable or a line in `~/.alves-factory/.env`; use `python3` where `python` is not Python 3);
 - [trackers.md](../alves-factory-run/references/trackers.md);
 - [config.md](../alves-factory-run/references/config.md).
 
@@ -37,7 +37,7 @@ Every format keeps `task <N>` in the header, since step 4 recognises finished ta
 
 ## Process
 
-1. **Resolve.** Read the Factory ticket with `linear.py get` (find it with `find-by-url` when given an upstream ref) and take the upstream ref from its Upstream link per [linear-record.md](../alves-factory-run/references/linear-record.md); a Native ticket (no Upstream link, in a Linear project a `linear-project:` entry matches) is its own upstream ref. Match the project per [config.md](../alves-factory-run/references/config.md). The work dir is the planning run's `~/.factory/runs/<upstream-ref>/`; this run writes under its `implementation/` subdirectory. Resolve the run's GitHub account per [config.md](../alves-factory-run/references/config.md#github-account); every network git and gh command below (fetch, push, `gh pr …`) runs with that account's `GH_TOKEN`.
+1. **Resolve.** Read the Factory ticket with `linear.py get` (find it with `find-by-url` when given an upstream ref) and take the upstream ref from its Upstream link per [linear-record.md](../alves-factory-run/references/linear-record.md); a Native ticket (no Upstream link, in a Linear project a `linear-project:` entry matches) is its own upstream ref. Match the project per [config.md](../alves-factory-run/references/config.md). The work dir is the planning run's `~/.alves-factory/runs/<upstream-ref>/`; this run writes under its `implementation/` subdirectory. Resolve the run's GitHub account per [config.md](../alves-factory-run/references/config.md#github-account); every network git and gh command below (fetch, push, `gh pr …`) runs with that account's `GH_TOKEN`.
 
 2. **Claim.** The ticket must be in **Plan Approved**: In Progress means another run owns it, anything else means no trigger; either way exit with no writes. Set **In Progress**.
 
