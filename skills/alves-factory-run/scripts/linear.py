@@ -12,6 +12,7 @@ LINEAR_ALVES_API_KEY=... line in ~/.factory/.env. Every command prints JSON.
     python linear.py get-doc <issue> --title <t> [--out <f>]  # prints the doc, or writes its content to <f>
     python linear.py comment <issue> --file <f>
     python linear.py comments <issue> [--since <iso-datetime>]
+    python linear.py list --team <name> --project <name> --state <s> [--state <s> ...]
     python linear.py mark-duplicate <issue> --of <original-issue>
 
 <issue> is an identifier such as ALV-12 or an issue UUID. Exit 1 on any API error.
@@ -141,6 +142,41 @@ class Linear:
                 "author": (c.get("user") or {}).get("name") or (c.get("botActor") or {}).get("name"),
                 "from_factory": c["body"].lstrip().startswith(MARKER),
                 "body": c["body"],
+            })
+        return result
+
+    def list_issues(self, team, project, states):
+        """The project's issues in any of states, oldest first, each with when it entered its status.
+
+        Each issue carries id, identifier, url, state, updated_at, entered_state_at (the latest
+        move into its current status, or None when the history does not show one),
+        attachment_urls and comments ({created_at, from_factory, body}, oldest first).
+        """
+        data = self.gql(
+            "query($team: ID!, $project: String!, $states: [String!]) { issues(first: 250, filter: "
+            "{ team: { id: { eq: $team } }, project: { name: { eqIgnoreCase: $project } }, "
+            "state: { name: { in: $states } } }) { nodes { id identifier url createdAt updatedAt state { name } "
+            "attachments { nodes { url title } } history(first: 100) { nodes { createdAt toState { name } } } "
+            "comments(first: 250) { nodes { createdAt body } } } } }",
+            {"team": self.team_id(team), "project": project, "states": list(states)},
+        )
+        result = []
+        for node in sorted(data["issues"]["nodes"], key=lambda n: n["createdAt"]):
+            state = node["state"]["name"]
+            moves = sorted(h["createdAt"] for h in node["history"]["nodes"]
+                           if (h.get("toState") or {}).get("name") == state)
+            comments = sorted(node["comments"]["nodes"], key=lambda c: c["createdAt"])
+            result.append({
+                "id": node["id"],
+                "identifier": node["identifier"],
+                "url": node["url"],
+                "state": state,
+                "updated_at": node["updatedAt"],
+                "entered_state_at": moves[-1] if moves else None,
+                "attachment_urls": [a["url"] for a in node["attachments"]["nodes"]],
+                "comments": [{"created_at": c["createdAt"],
+                              "from_factory": c["body"].lstrip().startswith(MARKER),
+                              "body": c["body"]} for c in comments],
             })
         return result
 
@@ -288,6 +324,10 @@ def main(argv=None, linear=None):
     p = sub.add_parser("comments")
     p.add_argument("issue")
     p.add_argument("--since")
+    p = sub.add_parser("list")
+    p.add_argument("--team", required=True)
+    p.add_argument("--project", required=True)
+    p.add_argument("--state", action="append", required=True, dest="states")
     p = sub.add_parser("mark-duplicate")
     p.add_argument("issue")
     p.add_argument("--of", required=True, dest="original")
@@ -319,6 +359,8 @@ def main(argv=None, linear=None):
             result = linear.comment(args.issue, read(args.file))
         elif args.command == "comments":
             result = linear.comments(args.issue, args.since)
+        elif args.command == "list":
+            result = linear.list_issues(args.team, args.project, args.states)
         else:
             result = linear.mark_duplicate(args.issue, args.original)
     except (LinearError, OSError) as error:

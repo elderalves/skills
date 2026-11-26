@@ -27,12 +27,12 @@ The team's statuses, by exact name, and who sets each:
 | In Progress | implementation run | the implementer owns the ticket |
 | In Review | implementation run, or promotion run | the draft PR is open, waiting on the owner; the last factory comment says why it stayed a draft |
 | **Team Review** | implementation run, or owner | the PR is ready for the project team; entered from In Review (the owner's move), it triggers a promotion run |
-| Blocked | either run | the run failed; the last factory comment says where and why |
-| Done | owner | after the PR merges |
+| Blocked | either run, or the sweep | the run failed; the last factory comment says where and why |
+| Done | the sweep, or owner | the factory PR merged |
 | Canceled | owner | dropped |
 | Duplicate | either run | a second Factory ticket for the same Upstream ticket |
 
-**Ownership:** a run that finds its ticket in Planning, Plan Review or In Progress exits without acting: another run owns it. A run that crashed leaves its status behind; the owner moves the ticket back to Ready (or Plan Approved) to retry.
+**Ownership:** a run that finds its ticket in Planning, Plan Review or In Progress exits without acting: another run owns it. A run that crashed leaves its status behind. The **sweep** (`alves-factory-sweep`) finds it once no factory comment has come for the stale limit, and moves it back to Ready (or Plan Approved) to start a new run; a ticket that stalls again right after that restart goes to Blocked, and the owner moves it back by hand. The sweep's comments are factory comments whose heading starts `## Sweep:`.
 
 ## Comments
 

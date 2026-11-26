@@ -103,3 +103,13 @@ _Avoid_: fallback, deviation (alone)
 **Promotion**:
 Marking the factory's draft PR ready for review by the project team, either by the ready check on a project that allows it or by the owner moving the Factory ticket to Team Review.
 _Avoid_: publishing, undrafting, approval
+
+## Operations
+
+**Sweep**:
+A scheduled pass over the factory's record that catches what the event triggers missed: it restarts a run that died, starts a run whose trigger never fired, and closes the Factory ticket of a merged PR. It acts only on statuses, times and PR states, and starts at most one run per pass.
+_Avoid_: cron, reconciler, janitor
+
+**Stale limit**:
+How long a ticket may sit in a running status (Planning, Plan Review, In Progress) with no factory comment before the sweep judges its run dead and restarts it, once.
+_Avoid_: timeout, TTL

@@ -26,7 +26,7 @@ Run one **triage**: from an assigned Upstream ticket to a **Triage decision** of
 
 4. **Gather evidence and decide.** Work in the current directory when it is a checkout of the entry's `repo` (T3 Code starts each run in its own worktree), otherwise in the configured `repo`, read-only: fetch with the entry's GitHub account per [config.md](../alves-factory-run/references/config.md#github-account) and read `origin/<base_branch>` without checking anything out. Search the repo for what the ticket names (components, files, endpoints, messages), and check whether the work already exists there. Then apply [references/criteria.md](references/criteria.md). **Done when** the decision has a reason that cites the ticket text and the repo evidence behind it.
 
-5. **Act on the decision.** Write `triage.md` beside `ticket.md`: the decision, the reason and the evidence.
+5. **Act on the decision.** Write `triage.md` beside `ticket.md`: the decision, the reason and the evidence. Its first line under the heading is `- **Decision:** work`, `unsure` or `not work`, exactly so: `alves-factory-sweep` reads it to find a **work** decision that never became a Factory ticket, and to leave a **not work** one alone.
    - **work:** invoke `alves-factory-run` with the upstream ref. It creates the Factory ticket and plans it.
    - **unsure:** `linear.py create` the Factory ticket per [linear-record.md](../alves-factory-run/references/linear-record.md) in the entry's `linear_project` with status **Backlog**, then post the **triage comment** from `triage.md`. Planning starts only when the owner moves it to Ready.
    - **not work:** no writes.

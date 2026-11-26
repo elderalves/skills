@@ -133,6 +133,30 @@ class LinearTests(unittest.TestCase):
         with self.assertRaises(LinearError):
             linear_mod.api_key({}, env_file.with_name("missing.env"))
 
+    def test_list_issues_reports_when_each_entered_its_status(self):
+        node = {
+            "id": "i1", "identifier": "ALV-13", "url": "u", "createdAt": "2026-01-01T00:00:00Z",
+            "updatedAt": "2026-01-03T00:00:00Z", "state": {"name": "In Review"},
+            "attachments": {"nodes": [{"url": "https://x.atlassian.net/browse/PCS-1", "title": "PCS-1"}]},
+            "history": {"nodes": [
+                {"createdAt": "2026-01-02T00:00:00Z", "toState": {"name": "In Review"}},
+                {"createdAt": "2026-01-01T12:00:00Z", "toState": {"name": "In Progress"}},
+                {"createdAt": "2026-01-01T06:00:00Z", "toState": {"name": "In Review"}},
+                {"createdAt": "2026-01-02T01:00:00Z", "toState": None},
+            ]},
+            "comments": {"nodes": [
+                {"createdAt": "2026-01-02T00:00:00Z", "body": f"{MARKER}\n\nlater"},
+                {"createdAt": "2026-01-01T00:00:00Z", "body": "owner"},
+            ]},
+        }
+        fake = Fake({"teams(": {"teams": {"nodes": [{"id": "team1", "name": "Alves"}]}},
+                     "issues(": {"issues": {"nodes": [node]}}})
+        [found] = Linear(fake).list_issues("Alves", "AgileKit", ["In Review"])
+        self.assertEqual(found["entered_state_at"], "2026-01-02T00:00:00Z")
+        self.assertEqual(found["attachment_urls"], ["https://x.atlassian.net/browse/PCS-1"])
+        self.assertEqual([c["from_factory"] for c in found["comments"]], [False, True])
+        self.assertEqual(fake.called("issues(")[0]["states"], ["In Review"])
+
     def test_cli_reports_errors_with_exit_1(self):
         def boom(query, variables):
             raise LinearError("LINEAR_ALVES_API_KEY is not set")

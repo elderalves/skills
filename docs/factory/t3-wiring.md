@@ -1,6 +1,6 @@
 # Wiring the factory into T3 Code
 
-Factory runs start from T3 Code **scheduled tasks** with an **On webhook** schedule. Linear status changes trigger planning, implementation and promotion; an Upstream assignment (Jira) triggers triage. T3 filters each delivery, so only the right event starts a thread; the skills' own status checks are the last guard against duplicate runs.
+Factory runs start from T3 Code **scheduled tasks**. Tasks A to D have an **On webhook** schedule: Linear status changes trigger planning, implementation and promotion, and an Upstream assignment (Jira) triggers triage. T3 filters each delivery, so only the right event starts a thread; the skills' own status checks are the last guard against duplicate runs. Task E runs on an **interval** and sweeps up what the webhooks missed.
 
 | Task | Trigger | Skill | Projects |
 |---|---|---|---|
@@ -8,8 +8,9 @@ Factory runs start from T3 Code **scheduled tasks** with an **On webhook** sched
 | B: "factory: implement" | Linear: ticket enters **Plan Approved** | `alves-factory-implement` | every project |
 | C: "factory: triage" | Jira: ticket assigned to the owner | `alves-factory-triage` | projects with a Jira Upstream tracker |
 | D: "factory: promote" | Linear: ticket moves from **In Review** to **Team Review** | `alves-factory-implement --promote` | every project |
+| E: "factory: sweep" | every 30 minutes | `alves-factory-sweep` | every project |
 
-Each task belongs to one T3 project (one repo), so a project gets its own A, B and D, plus C when its work starts in Jira.
+Each task belongs to one T3 project (one repo), so a project gets its own A, B, D and E, plus C when its work starts in Jira.
 
 ## Shared settings
 
@@ -21,7 +22,7 @@ Each task belongs to one T3 project (one repo), so a project gets its own A, B a
 | Workspace | Create a new worktree |
 | Base branch | From `<base_branch>` (remote), as in `~/.factory/projects.json` |
 | Model | Claude Opus 5.5, High: the run's orchestrator, which also plans and implements; the Council's seats are separate, started through `delegate_task` |
-| Schedule | On webhook |
+| Schedule | On webhook (Task E: interval) |
 
 ## Tasks A, B and D (Linear)
 
@@ -96,6 +97,22 @@ Generate the token once, in PowerShell, and keep it only in Task C's filter and 
    - **Headers:** `Content-Type: application/json` and `X-Factory-Token: <the token>`.
 4. Name it "Factory triage", scope it to the projects in `projects.json`, and turn it on.
 
+## Task E (sweep)
+
+| Field | Value |
+|---|---|
+| Schedule | Interval, every 30 minutes (`everyMs: 1800000`) |
+| Destination | New thread each run, in a new worktree, like the others: the sweep may start one run in its own thread |
+
+Prompt, naming every `projects.json` entry of the task's repo by its exact `match` (Metronome's task names `DXPX-`, `RTP-` and `AI-`):
+
+```
+Use the alves-factory-sweep skill on PCS-.
+A schedule started this run. Never ask questions: finish with the skill's final reply.
+```
+
+A sweep restarts a dead run by moving its ticket back to Ready or Plan Approved, so Tasks A and B must be wired for the restart to start anything; a sweep that finds the trigger dropped again starts the run itself on its next pass. Check what a sweep would do, with no writes, by running the skill with `--dry-run`.
+
 ## Ids
 
 Look them up with `linear.py` (or the Linear API) when adding a project.
@@ -110,12 +127,12 @@ Look them up with `linear.py` (or the Linear API) when adding a project.
 | Project **Metronome** | `bf16f71d-7545-4fad-a283-5d123a06ada2` |
 | Project **AgileKit** | `8f981427-92e8-4218-ab04-dcca8be7a0ed` |
 
-Wired so far: Gerador de Escala (A, B; Native, so no C). Configured, not wired: AgileKit (`PCS-`, Jira on fullsteam.atlassian.net: A, B, C) and Metronome (Jira on gridxissues.atlassian.net, which also needs `acli` signed in there).
+Wired so far: Gerador de Escala (A, B; Native, so no C). Task E is not wired anywhere yet. Configured, not wired: AgileKit (`PCS-`, Jira on fullsteam.atlassian.net: A, B, C) and Metronome (Jira on gridxissues.atlassian.net, which also needs `acli` signed in there).
 
 ## Prerequisites on the runner
 
 - `LINEAR_ALVES_API_KEY` in the environment T3 Code starts with (restart T3 after setting it), or in `~/.factory/.env`.
-- The five `alves-factory-*` skills visible to the orchestrator model (`~/.claude/skills` junctions to `~/.agents/skills`).
+- The six `alves-factory-*` skills visible to the orchestrator model (`~/.claude/skills` junctions to `~/.agents/skills`).
 - The project's `github_account` logged in to `gh`.
 - For a Jira project: `acli` signed in to the project's `upstream.site` (`acli jira auth status`). `acli` holds one site for the whole machine, so only the projects on that site can run; a run on another site's project stops with both sites named.
 - Enable and authenticate in T3 every connection a Council seat uses. The default Council uses Codex (`gpt-6.2-sol`), Claude (`claude-opus-5-5`) and OpenCode Go Muse Spark 1.3 Contributor (through T3's `opencode` connection). Shared, named and per-project seats and Go billing routing are in [factory config](../../skills/alves-factory-run/references/config.md#council-targets); the optional model floor is in [policy files](../../skills/alves-factory-run/references/config.md#council-fidelity-and-model-floor).
