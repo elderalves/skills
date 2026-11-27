@@ -22,9 +22,14 @@
       "match": "PROJ-",
       "repo": "~/Projects/acme/repos/proj",
       "base_branch": "main",
-      "upstream": { "type": "jira", "site": "example.atlassian.net" },
+      "upstream": {
+        "type": "jira",
+        "site": "example.atlassian.net",
+        "file": { "project_key": "PROJ" }
+      },
       "linear_project": "Proj",
-      "github_account": "my-work-account"
+      "github_account": "my-work-account",
+      "discovery": {}
     },
     {
       "match": "linear-project:My Side Project",
