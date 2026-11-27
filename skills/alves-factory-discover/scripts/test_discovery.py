@@ -248,6 +248,13 @@ class Prepare(unittest.TestCase):
         self.assertIs(json.loads(out)["native"], True)
         self.assertIsNone(json.loads(out)["upstream_type"])
 
+    def test_prepare_passes_the_entrys_github_account(self):
+        entry = native(str(self.repo))
+        entry["github_account"] = "Michael-Alves_fust"
+        code, out, err = self.prepare(entry, FakeLinear())
+        self.assertEqual(code, 0, err)
+        self.assertEqual(json.loads(out)["github_account"], "Michael-Alves_fust")
+
     def test_prepare_layers_the_entry_policy(self):
         policy = self.root / "policy.json"
         policy.write_text(json.dumps({"lenses": ["security"], "max_candidates": 2}), encoding="utf-8")
