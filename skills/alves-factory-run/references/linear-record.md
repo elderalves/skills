@@ -7,7 +7,7 @@ The Factory ticket on Linear is the factory's only durable record (ADR `docs/fac
 - **Title:** `<upstream-ref>: <upstream title>`.
 - **Native tickets** are filed by the owner, so the factory leaves their title and description alone and adds no Upstream link; the rest of this record applies to them unchanged.
 - **Upstream link:** one attachment whose URL is the Upstream ticket's URL and whose title is the **upstream ref** (`PROJ-123`, `github:acme/widgets#12`, or `pasted:<slug>`). The URL is the deduplication key.
-- **Reading the upstream ref back.** The owner may file a Factory ticket by hand and attach the Upstream URL, and Linear then titles the attachment itself, so derive the ref from each attachment's **URL**: `https://<site>/browse/<KEY>` gives `<KEY>`, `https://github.com/<owner>/<repo>/issues/<n>` gives `github:<owner>/<repo>#<n>`, `https://factory.invalid/pasted/<stem>` gives `pasted:<stem>`. The Upstream link is the attachment whose derived ref a `projects.json` entry matches; other attachments (designs, docs) are context.
+- **Reading the upstream ref back.** The owner may file a Factory ticket by hand and attach the Upstream URL, and Linear then titles the attachment itself, so derive the ref from each attachment's **URL**: `https://<site>/browse/<KEY>` gives `<KEY>`, `https://github.com/<owner>/<repo>/issues/<n>` gives `github:<owner>/<repo>#<n>`, `https://factory.invalid/pasted/<stem>` gives `pasted:<stem>`. The Upstream link is the attachment whose derived ref a `projects.json` entry matches; other attachments (designs, docs) are context. On a **Discovered ticket** (label `discovered`), only the link the factory made counts: the one whose ref the `## Filed upstream` comment names, or, mid-filing, one titled with its own ref beside a `## Filing upstream` comment ([trackers.md](trackers.md#filing-a-discovered-ticket)); a same-tracker link the owner attached is context.
 - **Description:** the Upstream link and the project name, nothing else. The record lives in documents and comments.
 - **Documents:** `Plan` (the current `PLAN.md`) and `Assumptions` (the current `ASSUMPTIONS.md`), updated in place on every revision.
 - **Label:** one `gate:` label, the latest Gate decision: `gate:implement`, `gate:revise` or `gate:escalate`.
@@ -83,7 +83,7 @@ The team's statuses, by exact name, and who sets each:
 
 ## Comments
 
-Every factory comment starts with the `[alves-factory]` marker, which `linear.py comment` adds. Every other comment is the owner's. The sweep's comments (headed `## Sweep:`) and the filing comment (headed `## Filing upstream`) are factory comments too.
+Every factory comment starts with the `[alves-factory]` marker, which `linear.py comment` adds. Every other comment is the owner's. The sweep's comments (headed `## Sweep:`) and the filing comments (headed `## Filing upstream` and `## Filed upstream`) are factory comments too.
 
 **Round comment**, one per Council round:
 
@@ -130,6 +130,17 @@ or move it to **Plan Approved** to implement the current Plan as it stands.
 
 - **Title:** `"<title as a JSON string>"`
 - **Since:** <ISO time>
+```
+
+**Filed comment**, posted by `upstream.py file` as its last write, once the Factory ticket is renamed and linked and the Upstream ticket assigned (or left with whoever holds it). It records that the filing is finished: a later planning run of the ticket makes no Upstream call at all.
+
+```markdown
+[alves-factory]
+
+## Filed upstream
+
+- **Ref:** `<upstream ref>`
+- **Default assignee:** <name, only when Jira gave the new ticket one>
 ```
 
 **Triage comment**, on a ticket triage filed. For **work**, posted before triage moves the ticket to Ready:
