@@ -155,13 +155,13 @@ class Linear:
 
         Each issue carries id, identifier, url, state, updated_at, entered_state_at (the latest
         move into its current status, or None when the history does not show one),
-        attachment_urls and comments ({created_at, from_factory, body}, oldest first).
+        labels (names), attachment_urls and comments ({created_at, from_factory, body}, oldest first).
         """
         data = self.gql(
             "query($team: ID!, $project: String!, $states: [String!]) { issues(first: 250, filter: "
             "{ team: { id: { eq: $team } }, project: { name: { eqIgnoreCase: $project } }, "
             "state: { name: { in: $states } } }) { nodes { id identifier url createdAt updatedAt state { name } "
-            "attachments { nodes { url title } } history(first: 100) { nodes { createdAt toState { name } } } "
+            "labels { nodes { name } } attachments { nodes { url title } } history(first: 100) { nodes { createdAt toState { name } } } "
             "comments(first: 250) { nodes { createdAt body } } } } }",
             {"team": self.team_id(team), "project": project, "states": list(states)},
         )
@@ -178,6 +178,7 @@ class Linear:
                 "state": state,
                 "updated_at": node["updatedAt"],
                 "entered_state_at": moves[-1] if moves else None,
+                "labels": [l["name"] for l in node["labels"]["nodes"]],
                 "attachment_urls": [a["url"] for a in node["attachments"]["nodes"]],
                 "comments": [{"created_at": c["createdAt"],
                               "from_factory": c["body"].lstrip().startswith(MARKER),

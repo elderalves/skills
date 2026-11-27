@@ -212,7 +212,7 @@ class LinearTests(unittest.TestCase):
     def test_list_issues_reports_when_each_entered_its_status(self):
         node = {
             "id": "i1", "identifier": "ALV-13", "url": "u", "createdAt": "2026-01-01T00:00:00Z",
-            "updatedAt": "2026-01-03T00:00:00Z", "state": {"name": "In Review"},
+            "updatedAt": "2026-01-03T00:00:00Z", "state": {"name": "In Review"}, "labels": {"nodes": []},
             "attachments": {"nodes": [{"url": "https://x.atlassian.net/browse/PCS-1", "title": "PCS-1"}]},
             "history": {"nodes": [
                 {"createdAt": "2026-01-02T00:00:00Z", "toState": {"name": "In Review"}},
@@ -232,6 +232,20 @@ class LinearTests(unittest.TestCase):
         self.assertEqual(found["attachment_urls"], ["https://x.atlassian.net/browse/PCS-1"])
         self.assertEqual([c["from_factory"] for c in found["comments"]], [False, True])
         self.assertEqual(fake.called("issues(")[0]["states"], ["In Review"])
+
+    def test_list_issues_carries_each_issues_label_names(self):
+        node = {
+            "id": "i1", "identifier": "ALV-14", "url": "u", "createdAt": "2026-01-01T00:00:00Z",
+            "updatedAt": "2026-01-01T00:00:00Z", "state": {"name": "Ready"},
+            "labels": {"nodes": [{"name": "discovered"}, {"name": "Bug"}]},
+            "attachments": {"nodes": []}, "history": {"nodes": []}, "comments": {"nodes": []},
+        }
+        fake = Fake({"teams(": {"teams": {"nodes": [{"id": "team1", "name": "Alves"}]}},
+                     "issues(": {"issues": {"nodes": [node]}}})
+        [found] = Linear(fake).list_issues("Alves", "AgileKit", ["Ready"])
+        self.assertEqual(found["labels"], ["discovered", "Bug"])
+        self.assertEqual(found["attachment_urls"], [])
+        self.assertIn("labels { nodes { name } }", next(q for q, _ in fake.calls if "issues(" in q))
 
     def test_cli_reports_errors_with_exit_1(self):
         def boom(query, variables):

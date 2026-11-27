@@ -56,6 +56,59 @@ class Refs(unittest.TestCase):
         t = {"identifier": "ALV-2", "attachment_urls": ["https://x.atlassian.net/browse/PCS-4"]}
         self.assertIsNone(sweep.ticket_ref(t, NATIVE))
 
+    def test_a_github_link_matches_whatever_its_casing_and_takes_the_matchs(self):
+        entry = {"match": "github:acme/widgets#", "repo": "C:/g", "linear_project": "Widgets"}
+        t = {"identifier": "ALV-3", "attachment_urls": ["https://github.com/Acme/Widgets/issues/12"]}
+        self.assertEqual(sweep.ticket_ref(t, entry), "github:acme/widgets#12")
+        self.assertIsNone(sweep.ticket_ref(t, {**entry, "match": "github:acme/gadgets#"}))
+
+    def test_an_unlinked_discovered_ticket_is_its_own_ref(self):
+        t = {"identifier": "ALV-5", "attachment_urls": ["https://figma.com/f"], "labels": ["Discovered"]}
+        self.assertEqual(sweep.ticket_ref(t, JIRA), "ALV-5")
+
+    def test_an_unlinked_ticket_without_the_label_is_not_the_entrys(self):
+        t = {"identifier": "ALV-6", "attachment_urls": [], "labels": ["bug"]}
+        self.assertIsNone(sweep.ticket_ref(t, JIRA))
+
+    def test_a_linked_discovered_ticket_takes_its_upstream_ref(self):
+        t = {"identifier": "ALV-7", "attachment_urls": ["https://x.atlassian.net/browse/PCS-4"],
+             "labels": ["discovered"]}
+        self.assertEqual(sweep.ticket_ref(t, JIRA), "PCS-4")
+        self.assertIsNone(sweep.ticket_ref(t, {**JIRA, "match": "DXPX-"}))
+
+
+class Discovered(unittest.TestCase):
+    """A Discovered ticket in a non-Native entry, before a planning run linked it upstream."""
+
+    GITHUB = {"match": "github:acme/widgets#", "repo": "C:/g", "upstream": {"type": "github"},
+              "linear_project": "Widgets"}
+
+    def sweep(self, *tickets):
+        [project], notes = sweep.gather([self.GITHUB], "Alves", LIMITS, FakeLinear(tickets), fake_runner({}),
+                                        Path(tempfile.mkdtemp()))
+        self.assertEqual(notes, [])
+        return sweep.decide([project], NOW, LIMITS)
+
+    @staticmethod
+    def unlinked(state, entered, labels=("discovered",), identifier="ALV-5"):
+        t = ticket(state, entered=entered, identifier=identifier)
+        del t["ref"]
+        return {**t, "attachment_urls": [], "labels": list(labels)}
+
+    def test_a_dropped_ready_trigger_is_retriggered(self):
+        [action] = self.sweep(self.unlinked("Ready", "2026-11-26T11:00:00Z"))["actions"]
+        self.assertEqual((action["kind"], action["ticket"], action["ref"], action["to_status"]),
+                         ("retrigger", "ALV-5", "ALV-5", "Ready"))
+
+    def test_a_planning_run_that_died_before_filing_is_restarted(self):
+        [action] = self.sweep(self.unlinked("Planning", "2026-11-26T08:00:00Z"))["actions"]
+        self.assertEqual((action["kind"], action["ticket"], action["to_status"]), ("restart", "ALV-5", "Ready"))
+
+    def test_an_unlinked_ticket_without_the_label_is_ignored(self):
+        result = self.sweep(self.unlinked("Planning", "2026-11-26T08:00:00Z", labels=("bug",)),
+                            self.unlinked("Ready", "2026-11-26T11:00:00Z", labels=(), identifier="ALV-6"))
+        self.assertEqual((result["actions"], result["deferred"]), ([], []))
+
 
 class StuckRuns(unittest.TestCase):
     def test_a_live_planning_run_is_left_alone(self):

@@ -60,6 +60,7 @@ DEFAULT_LIMITS = {
     "triage_window_days": 14,
 }
 NATIVE = "linear-project:"
+DISCOVERED = "discovered"
 PLANNING = {"Planning", "Plan Review"}
 IMPLEMENTING = {"In Progress"}
 TRIGGERS = {"Ready": "alves-factory-run", "Plan Approved": "alves-factory-implement"}
@@ -97,13 +98,20 @@ def ref_from_url(url):
 
 
 def ticket_ref(ticket, entry):
-    """The ticket's upstream ref when it belongs to entry, else None."""
-    if entry["match"].startswith(NATIVE):
-        linked = [r for r in map(ref_from_url, ticket["attachment_urls"]) if r]
+    """The ticket's upstream ref when it belongs to entry, else None.
+
+    A Native ticket, and a Discovered ticket a planning run has not yet filed upstream (no
+    Upstream link), have no upstream ref: each is its own, its Linear identifier."""
+    match = entry["match"]
+    linked = list(filter(None, map(ref_from_url, ticket["attachment_urls"])))
+    if match.startswith(NATIVE):
         return None if linked else ticket["identifier"]
-    for ref in filter(None, map(ref_from_url, ticket["attachment_urls"])):
-        if ref.startswith(entry["match"]):
-            return ref
+    if not linked and DISCOVERED in (label.lower() for label in ticket.get("labels", [])):
+        return ticket["identifier"]
+    for ref in linked:
+        # GitHub owner and repo names are case-insensitive, and a link keeps gh's casing.
+        if ref.startswith(match) or (match.startswith("github:") and ref.lower().startswith(match.lower())):
+            return match + ref[len(match):]
     return None
 
 
