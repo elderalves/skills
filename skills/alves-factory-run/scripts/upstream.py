@@ -262,9 +262,11 @@ class Upstream:
             day = (since - timedelta(days=1)).strftime("%Y-%m-%d")
             clause = f" AND summary ~ {jql_string(words)}" if words else ""
             jql = f"project = {self.project_key} AND reporter = currentUser(){clause} AND created >= \"{day}\""
-            hits = [(i["key"], (i.get("fields") or {}).get("summary"), (i.get("fields") or {}).get("created"))
-                    for i in self.jira_items(what, jql, "key,summary,created", 50)]
-            hits = [(key, self.url_root + key, summary, created) for key, summary, created in hits]
+            # acli's search refuses the `created` field, so read it with `view`, only for exact titles.
+            same = [i["key"] for i in self.jira_items(what, jql, "key,summary", 50)
+                    if isinstance((i.get("fields") or {}).get("summary"), str)
+                    and i["fields"]["summary"].strip() == title.strip()]
+            hits = [(key, self.url_root + key, title, self.jira_created(what, key)) for key in same]
         else:
             # The REST listing, not the search index: the index lags, and a restart seconds after
             # a create must still find the issue.
@@ -280,6 +282,15 @@ class Upstream:
                  if isinstance(summary, str) and summary.strip() == title.strip()]
         filed = sorted(f for f in filed if f[0] >= since)
         return {"ref": filed[0][1], "url": filed[0][2]} if filed else None
+
+    def jira_created(self, what, key):
+        out = self.acli(what, "view", key, "--fields", "created", "--json")
+        data = self.json_out(what, out)
+        item = data[0] if isinstance(data, list) and data else data
+        created = ((item or {}).get("fields") or {}).get("created")
+        if not isinstance(created, str):
+            raise UpstreamError(f"{what}: acli view {key} printed no created time")
+        return created
 
     def create(self, title, body):
         """A new ticket, left unassigned: {ref, url}. The body goes through a temp file."""
