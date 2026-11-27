@@ -13,7 +13,7 @@ The ticket in the Factory tracker that holds the factory's record of one piece o
 _Avoid_: mirror ticket, shadow ticket, internal ticket
 
 **Upstream tracker**:
-The project's own ticket tracker, which the factory does not control and touches only to read the work and to report its conclusion.
+The project's own ticket tracker, which the factory does not control and touches only to read the work, to file a Discovered ticket the owner approved, and to report its conclusion.
 _Avoid_: real tracker, client tracker, ticket source, source tracker
 
 **Upstream ticket**:
@@ -21,8 +21,34 @@ The ticket in an Upstream tracker that describes the work to be done. Each Upstr
 _Avoid_: original ticket, source ticket, Jira ticket
 
 **Native ticket**:
-A Factory ticket that is also the work's Upstream ticket, for a project with no Upstream tracker of its own: the owner files the work directly in the Factory tracker.
+A Factory ticket that is also the work's Upstream ticket, for a project with no Upstream tracker of its own: the owner, or Discovery, files the work directly in the Factory tracker.
 _Avoid_: internal ticket, Linear-only ticket, self-ticket
+
+## Discovery
+
+**Discovery**:
+A scheduled pass over one repo, through one Lens, that looks for improvements worth doing and files each as a Discovered ticket for the owner to approve or reject. A pass that files nothing has succeeded.
+_Avoid_: improvement engine, scan, audit
+
+**Discovered ticket**:
+A Factory ticket that Discovery filed in Backlog, before any Upstream ticket exists. Once the owner moves it to Ready it is an ordinary Factory ticket, and the factory files its Upstream ticket when the project has an Upstream tracker; once the owner cancels it, it stays as the record that Discovery must not propose it again.
+_Avoid_: proposal, suggestion, finding, improvement ticket
+
+**Lens**:
+The one engineering angle a Discovery pass looks through, such as testing or accessibility, taken in turn from the repo's list.
+_Avoid_: category, focus, perspective
+
+**Value score**:
+How worth doing a Discovered ticket is, from 0 to 100, shown as High, Medium or Low. It measures the improvement, never the Plan, and leaves Effort out.
+_Avoid_: priority, confidence, impact score, IVS
+
+**Effort**:
+The size of a Discovered ticket's work (S, M or L), shown beside its Value score so the owner can pick by both.
+_Avoid_: cost, estimate, complexity
+
+**Quick win**:
+A Discovered ticket of High Value score and S Effort.
+_Avoid_: low-hanging fruit, easy win
 
 ## Plans and review
 
