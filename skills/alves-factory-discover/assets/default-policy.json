@@ -1,0 +1,20 @@
+{
+  "weights": {
+    "impact": 30,
+    "engineering": 25,
+    "reach": 15,
+    "evidence": 15,
+    "urgency": 15
+  },
+  "bands": { "high": 70, "medium": 50, "low": 30 },
+  "max_candidates": 5,
+  "lenses": [
+    "architecture",
+    "testing",
+    "performance",
+    "ux-accessibility",
+    "security",
+    "maintainability",
+    "developer-experience"
+  ]
+}
