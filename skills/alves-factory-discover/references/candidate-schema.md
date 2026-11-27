@@ -1,6 +1,6 @@
 # Candidate and score schemas
 
-The exact shapes of the two inputs a Discovery pass writes into its work dir, beside `prepare.json`. `discovery.py check` names every way they break these rules, and `discovery.py score` scores nothing until they pass.
+The exact shapes of the two inputs a Discovery pass writes into its work dir, beside `prepare.json`. `discovery.py check` names every way they break these rules, and `discovery.py score` scores nothing until they pass. `discovery.py prepare` starts each pass clean: it deletes `candidates.json`, `scores/`, `selected.json`, `filed.json` and `record/` from the work dir, and nothing else.
 
 ## `candidates.json`
 
@@ -43,6 +43,7 @@ Written by the scorer seat, one file per candidate.
 
 ```json
 {
+  "title": "Cover the CSV importer's encoding fallback with tests",
   "scores": { "impact": 9, "engineering": 8, "reach": 7, "evidence": 9, "urgency": 8 },
   "effort": "S",
   "rationale": {
@@ -58,6 +59,7 @@ Written by the scorer seat, one file per candidate.
 
 | Field | Rule |
 |---|---|
+| `title` | The `title` of the candidate it scored, exactly as `candidates.json` has it, so a score left from another candidate with the same id is caught. |
 | `scores` | Exactly `impact`, `engineering`, `reach`, `evidence` and `urgency`, each an integer from 0 to 10 (not a string, float or boolean). |
 | `effort` | `S` (under half a day), `M` (up to two days) or `L` (more). It never lowers the Value score. |
 | `rationale` | Non-empty text for each of the five criteria. |
@@ -69,3 +71,4 @@ Written by the scorer seat, one file per candidate.
 - **Band:** High at `bands.high` (70) or more, Medium at `bands.medium` (50), Low at `bands.low` (30); below Low the candidate is not filed.
 - **Selected:** the banded candidates by Value score, best first, ties in `candidates.json` order, at most `room`. Each item in `selected.json` is the candidate plus `value_score`, `band`, `effort`, `quick_win` (High and Effort `S`), `breakdown` (`[{criterion, weight, score, rationale}]`) and `lens`.
 - **Filed:** in Backlog of the Linear project, label `discovered` (plus `quick-win` on a Quick win), Linear priority 2 (High), 3 (Medium) or 4 (Low), never 1 (Urgent). The description is the template in [linear-record.md](../../alves-factory-run/references/linear-record.md), **Discovered ticket**.
+- **Filed once:** after each create, `file` appends `{number, identifier, title}` (the item's position in `selected.json`, from 1) to `filed.json`, and a rerun skips every item recorded there, so a `file` that failed part-way is simply rerun. The one case a rerun can duplicate: `Linear.create` creates the issue and then reads it back, and when that read fails the ticket exists but is not in `filed.json`. Before rerunning after such an error, look in the Linear project's Backlog for the title the error was about. A `--dry-run` neither reads nor writes `filed.json`.

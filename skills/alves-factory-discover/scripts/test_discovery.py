@@ -2,11 +2,13 @@
 
 import io
 import json
+import os
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from unittest import mock
 
 import discovery
 import council
@@ -66,12 +68,22 @@ class Settings(unittest.TestCase):
     def test_settings_refuses_jira_without_upstream_file(self):
         with self.assertRaisesRegex(discovery.DiscoveryError, "upstream.file"):
             discovery.settings(jira("C:/r"), self.policy)
-        with self.assertRaisesRegex(discovery.DiscoveryError, "project_key"):
-            discovery.settings(jira("C:/r", {"issue_type": "Task"}), self.policy)
         github = {"match": "github:acme/w#", "repo": "C:/w", "upstream": {"type": "github"}, "discovery": {}}
         with self.assertRaisesRegex(discovery.DiscoveryError, "upstream.file"):
             discovery.settings(github, self.policy)
+        with self.assertRaisesRegex(discovery.DiscoveryError, "upstream.file"):
+            discovery.settings(jira("C:/r", "yes"), self.policy)
         self.assertEqual(discovery.settings(jira("C:/r", {"project_key": "RTP"}), self.policy)["max_new"], 3)
+
+    def test_settings_takes_an_empty_upstream_file_as_the_opt_in(self):
+        # project_key defaults to the match without its trailing -, as upstream.py does.
+        self.assertEqual(discovery.settings(jira("C:/r", {}), self.policy)["max_new"], 3)
+        self.assertEqual(discovery.settings(jira("C:/r", {"issue_type": "Task"}), self.policy)["max_new"], 3)
+        github = {"match": "github:acme/w#", "repo": "C:/w", "upstream": {"type": "github", "file": {}},
+                  "discovery": {}}
+        self.assertEqual(discovery.settings(github, self.policy)["max_new"], 3)
+        with self.assertRaisesRegex(discovery.DiscoveryError, "project_key"):
+            discovery.settings(jira("C:/r", {"project_key": " "}), self.policy)
 
     def test_settings_refuses_an_entry_without_discovery(self):
         entry = native("C:/s")
@@ -233,6 +245,44 @@ class Prepare(unittest.TestCase):
         self.assertEqual(json.loads(out)["lens"], "security")
         self.assertEqual(json.loads(out)["max_candidates"], 2)
 
+    def test_prepare_expands_a_tilde_out_dir(self):
+        home = self.root / "home"
+        home.mkdir()
+        cwd = self.root / "cwd"
+        cwd.mkdir()
+        self.out = Path("~/pass")
+        old = os.getcwd()
+        os.chdir(cwd)
+        try:
+            with mock.patch.dict(os.environ, {"USERPROFILE": str(home), "HOME": str(home)}):
+                code, out, err = self.prepare(native(str(self.repo)), FakeLinear())
+        finally:
+            os.chdir(old)
+        self.assertEqual(code, 0, err)
+        self.assertTrue((home / "pass" / "prepare.json").is_file())
+        self.assertTrue((home / "pass" / "tickets.json").is_file())
+        self.assertFalse((cwd / "~").exists())
+
+    def test_prepare_starts_each_pass_clean(self):
+        self.out.mkdir()
+        for name in ("candidates.json", "selected.json", "filed.json", "notes.txt"):
+            (self.out / name).write_text("[]", encoding="utf-8")
+        for folder in ("scores", "record", "keep"):
+            (self.out / folder).mkdir()
+            (self.out / folder / "x.json").write_text("{}", encoding="utf-8")
+        code, _, err = self.prepare(native(str(self.repo)), FakeLinear())
+        self.assertEqual(code, 0, err)
+        self.assertEqual(sorted(p.name for p in self.out.iterdir()),
+                         ["keep", "notes.txt", "prepare.json", "tickets.json"])
+        self.assertTrue((self.out / "keep" / "x.json").is_file())
+
+    def test_prepare_that_fails_leaves_the_work_dir_alone(self):
+        self.out.mkdir()
+        (self.out / "candidates.json").write_text("[]", encoding="utf-8")
+        code, _, _ = self.prepare(native(str(self.repo)), FakeLinear(), project="Nowhere")
+        self.assertEqual(code, 2)
+        self.assertTrue((self.out / "candidates.json").is_file())
+
     def test_prepare_exits_2_on_config_errors(self):
         linear = FakeLinear()
         code, _, err = self.prepare(jira(str(self.repo)), linear, project="Explore")
@@ -295,7 +345,7 @@ class WorkDir(unittest.TestCase):
         self.write("candidates.json", [c for c, _ in pairs])
         for c, s in pairs:
             if s is not None:
-                self.write(f"scores/{c['id']}.json", s)
+                self.write(f"scores/{c['id']}.json", {"title": c.get("title"), **s})
 
     def run_cli(self, *argv, linear=None):
         stdout, stderr = io.StringIO(), io.StringIO()
@@ -339,6 +389,17 @@ class Check(WorkDir):
         problems = discovery.check(self.dir)
         self.assertTrue(any(p.startswith("c1: ") and "scores/c1.json" in p for p in problems), problems)
         self.assertTrue(any(p.startswith("c2: ") and "rationale" in p for p in problems), problems)
+
+    def test_check_names_a_score_for_another_title(self):
+        self.put((candidate("c1", "Fix the importer"), {**score(S81), "title": "Fix the exporter"}),
+                 (candidate("c2"), score(S81)))
+        problems = discovery.check(self.dir)
+        self.assertEqual(len(problems), 1, problems)
+        self.assertTrue(problems[0].startswith("c1: "), problems)
+        self.assertIn("Fix the exporter", problems[0])
+        self.assertIn("Fix the importer", problems[0])
+        self.write("scores/c2.json", score(S81))
+        self.assertTrue(any(p.startswith("c2: ") and "title" in p for p in discovery.check(self.dir)))
 
     def test_check_refuses_more_than_max_candidates(self):
         self.put(*[(candidate(f"c{n}"), score(S81)) for n in range(1, 7)])
@@ -539,6 +600,58 @@ class Filing(WorkDir):
         self.assertEqual(code, 1)
         self.assertIn("boom", err)
         self.assertIn("ALV-11", err)
+
+    def test_file_records_each_create_and_a_rerun_files_only_the_rest(self):
+        class Failing(FakeCreating):
+            def create(self, *args, **kwargs):
+                if self.created:
+                    raise discovery.linear_mod.LinearError("boom")
+                return super().create(*args, **kwargs)
+        code, _, err = self.score_and_file(linear=Failing())
+        self.assertEqual(code, 1)
+        self.assertIn("rerun `file`", err)
+        filed = json.loads((self.dir / "filed.json").read_text(encoding="utf-8"))
+        self.assertEqual(filed, [{"number": 1, "identifier": "ALV-11", "title": "Test the parser"}])
+        linear = FakeCreating()
+        code, out, err = self.run_cli("file", str(self.dir), linear=linear)
+        self.assertEqual(code, 0, err)
+        self.assertEqual([c["title"] for c in linear.created], ["Speed up the importer"])
+        self.assertEqual([(r["identifier"], r["title"]) for r in json.loads(out)],
+                         [("ALV-11", "Test the parser"), ("ALV-11", "Speed up the importer")])
+        self.assertEqual([f["number"] for f in json.loads((self.dir / "filed.json").read_text(encoding="utf-8"))],
+                         [1, 2])
+        again = FakeCreating()
+        self.assertEqual(self.run_cli("file", str(self.dir), linear=again)[0], 0)
+        self.assertEqual(again.created, [])
+
+    def test_dry_run_neither_reads_nor_writes_filed_json(self):
+        self.write("filed.json", [{"number": 1, "identifier": "ALV-1", "title": "Test the parser"}])
+        code, out, err = self.score_and_file("--dry-run", linear=FakeCreating())
+        self.assertEqual(code, 0, err)
+        self.assertTrue((self.dir / "record" / "01-ticket.md").is_file())
+        self.assertIn("Test the parser", (self.dir / "record" / "01-ticket.md").read_text(encoding="utf-8"))
+        self.assertEqual(len(json.loads((self.dir / "filed.json").read_text(encoding="utf-8"))), 1)
+
+    def test_work_dir_commands_expand_a_tilde(self):
+        self.put((candidate("c1", "Test the parser"), score(S92, "S")))
+        home = self.dir.parent
+        tilde = str(Path("~") / self.dir.name)
+        linear = FakeCreating()
+        cwd = self.dir / "cwd"
+        cwd.mkdir()
+        old = os.getcwd()
+        os.chdir(cwd)
+        try:
+            with mock.patch.dict(os.environ, {"USERPROFILE": str(home), "HOME": str(home)}):
+                self.assertEqual(self.run_cli("check", tilde)[:2], (0, "ok\n"))
+                self.assertEqual(self.run_cli("score", tilde)[0], 0)
+                self.assertEqual(self.run_cli("file", tilde, linear=linear)[0], 0)
+        finally:
+            os.chdir(old)
+        self.assertFalse((cwd / "~").exists())
+        self.assertEqual(len(linear.created), 1)
+        self.assertTrue((self.dir / "selected.json").is_file())
+        self.assertTrue((self.dir / "filed.json").is_file())
 
     def test_file_without_score_exits_2(self):
         code, _, err = self.run_cli("file", str(self.dir), linear=FakeCreating())

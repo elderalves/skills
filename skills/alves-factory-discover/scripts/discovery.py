@@ -9,7 +9,9 @@ and which scored candidates become Discovered tickets.
 `prepare` finds the projects.json entry of the Linear project (project.py --linear-project),
 which must carry a `discovery` object, and layers the entry's `discovery.policy` file over the
 bundled assets/default-policy.json. It reads every Factory ticket of the project (any status)
-into <dir>/tickets.json and writes <dir>/prepare.json, which it also prints:
+into <dir>/tickets.json and writes <dir>/prepare.json, which it also prints. Each pass starts
+clean: before writing, it deletes the previous pass's candidates.json, scores/, selected.json,
+filed.json and record/ from <dir>, and nothing else.
 
     {"match", "linear_project", "team", "repo", "base_branch", "lens", "room", "open_backlog",
      "max_candidates", "since", "scorer", "policy", "upstream_type"}
@@ -21,22 +23,29 @@ into <dir>/tickets.json and writes <dir>/prepare.json, which it also prints:
 - scorer: the seat that scores every candidate: `discovery.scorer.target`, else the entry's
   resolved Council testing-risk seat. It is never the Discovery agent's own model.
 
-An entry with an Upstream tracker (jira, github) needs `upstream.file`, and Jira its
-`project_key`, so an approved Discovered ticket can be filed there.
+An entry with an Upstream tracker (jira, github) needs an `upstream.file` object, which may be
+`{}`: it is the owner's opt-in to filing approved Discovered tickets there. Jira's
+`project_key` is optional (upstream.py defaults it to the match without its trailing `-`).
 
 The agent then writes <work-dir>/candidates.json and the scorer each scores/<id>.json, in the
 shapes of references/candidate-schema.md.
 
 `check` prints `ok`, or one problem per line naming the candidate (exit 1): a criterion missing,
 not an integer or outside 0-10, an Effort other than S, M or L, a seat other than prepare.json's
-scorer, more than max_candidates candidates, a candidate without `closest.why_different`.
+scorer, a score file whose `title` is not its candidate's, more than max_candidates
+candidates, a candidate without `closest.why_different`.
 `score` runs the same check and scores nothing until it passes. Then each candidate's Value
 score is sum(weight * score) / 10, rounded half up, its band High, Medium or Low (below Low it
 is dropped), and the best `room` of them, ties in candidate order, go to selected.json, which
 it prints. `file` files each selected item in Backlog of the Linear project, labelled
 `discovered` (plus `quick-win` for High with Effort S), with priority 2, 3 or 4 by band and the
 description of references/candidate-schema.md; it prints [{identifier, title, value_score,
-band, effort}]. `--dry-run` writes record/NN-ticket.md for each instead and files nothing.
+band, effort}]. After each create it appends {number, identifier, title} to filed.json, and a
+rerun skips every item filed.json records, so a `file` that failed part-way is rerun as is.
+`--dry-run` writes record/NN-ticket.md for each instead, files nothing and ignores filed.json.
+
+Every path argument may start with `~`, which is expanded here (PowerShell 5.1 and a quoted
+bash argument pass it through literally).
 
 Exit codes: 0 ok, 1 on check problems or a Linear or file error, 2 on unusable config,
 arguments or work-dir input, with `error: ...` on stderr.
@@ -46,6 +55,7 @@ import argparse
 import json
 import math
 import re
+import shutil
 import sys
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -71,6 +81,9 @@ QUICK_WIN = "quick-win"
 BACKLOG = "Backlog"
 FILED_UPSTREAM = {"jira", "github"}
 SAFE_ID = re.compile(r"^[A-Za-z0-9_-]+$")
+# What one pass leaves in its work dir after prepare; the next prepare deletes exactly these.
+PASS_FILES = ("candidates.json", "selected.json", "filed.json")
+PASS_DIRS = ("scores", "record")
 
 
 class DiscoveryError(Exception):
@@ -157,10 +170,11 @@ def settings(entry, policy):
     if kind in FILED_UPSTREAM:
         filing = upstream.get("file")
         if not isinstance(filing, dict):
-            raise DiscoveryError(f"{match!r} has a {kind} Upstream tracker but no upstream.file, so an "
-                                 "approved Discovered ticket could not be filed there")
-        if kind == "jira" and (not isinstance(filing.get("project_key"), str) or not filing["project_key"].strip()):
-            raise DiscoveryError(f"{match!r}: upstream.file needs the Jira project_key to file tickets in")
+            raise DiscoveryError(f"{match!r} has a {kind} Upstream tracker but no upstream.file object (it may "
+                                 "be {}), the owner's opt-in to filing approved Discovered tickets there")
+        # project_key is optional: upstream.py defaults it to the match without its trailing -.
+        if kind == "jira" and "project_key" in filing and not is_text(filing["project_key"]):
+            raise DiscoveryError(f"{match!r}: upstream.file.project_key must be a Jira project key")
     lenses = found.get("lenses", policy["lenses"])
     check_lenses(lenses, f"{match}: discovery.lenses")
     caps = {}
@@ -286,7 +300,7 @@ def candidate_problems(candidate):
     return problems
 
 
-def score_problems(work_dir, cid, scorer):
+def score_problems(work_dir, cid, title, scorer):
     name = f"scores/{cid}.json"
     try:
         data = read_json(work_dir / "scores" / f"{cid}.json")
@@ -297,6 +311,10 @@ def score_problems(work_dir, cid, scorer):
     if not isinstance(data, dict):
         return [f"{name} must be a JSON object"]
     problems = []
+    if not is_text(data.get("title")):
+        problems.append(f"{name} needs the title of the candidate it scored")
+    elif isinstance(title, str) and data["title"] != title:
+        problems.append(f"{name} scored {data['title']!r}, not this candidate's title {title!r}")
     scores = data.get("scores")
     if not isinstance(scores, dict):
         problems.append(f"scores must be an object of {', '.join(CRITERIA)}")
@@ -357,7 +375,7 @@ def check(work_dir):
             problems.append(f"{cid}: the id appears twice in candidates.json")
             continue
         seen.add(cid)
-        problems += [f"{cid}: {p}" for p in candidate_problems(candidate) + score_problems(work_dir, cid, scorer)]
+        problems += [f"{cid}: {p}" for p in candidate_problems(candidate) + score_problems(work_dir, cid, candidate.get("title"), scorer)]
     return problems
 
 
@@ -445,11 +463,29 @@ def score_work_dir(work_dir):
     return [], selected
 
 
+def read_filed(work_dir):
+    """{number: identifier} of the items an earlier `file` of this pass created."""
+    path = work_dir / "filed.json"
+    if not path.exists():
+        return {}
+    filed = read_input(path)
+    if not isinstance(filed, list) or any(not isinstance(f, dict) or not {"number", "identifier", "title"} <= f.keys()
+                                          for f in filed):
+        raise DiscoveryError(f"{path} must be a list of {{number, identifier, title}}")
+    return {(f["number"], f["title"]): f["identifier"] for f in filed}
+
+
 def file_selected(work_dir, linear, dry_run):
-    """File each selected item as a Discovered ticket in Backlog (a dry run writes record/NN-ticket.md)."""
+    """File each selected item as a Discovered ticket in Backlog, once (a dry run writes record/NN-ticket.md).
+
+    After each create, filed.json records it, so a rerun after a failure skips what was filed.
+    The one gap: Linear.create creates, then re-reads the issue; if that read fails, the ticket
+    exists but is not recorded, and a rerun files it again."""
     prepared = read_input(work_dir / "prepare.json")
     selected = read_input(work_dir / "selected.json")
-    filed = []
+    done = {} if dry_run else read_filed(work_dir)
+    records = [{"number": n, "identifier": i, "title": t} for (n, t), i in done.items()]
+    printed = []
     for number, item in enumerate(selected, 1):
         labels, priority, description = labels_for(item), PRIORITY[item["band"]], render_description(item)
         if dry_run:
@@ -462,17 +498,36 @@ def file_selected(work_dir, linear, dry_run):
                               f"- **Priority:** {priority} ({item['band']})\n\n"
                               f"---\n\n{description}", encoding="utf-8")
             identifier = None
+        elif (number, item["title"]) in done:
+            identifier = done[(number, item["title"])]
         else:
             try:
                 identifier = linear.create(prepared["team"], item["title"], state=BACKLOG,
-                                             project=prepared["linear_project"], description=description,
-                                             labels=labels, priority=priority)["identifier"]
+                                           project=prepared["linear_project"], description=description,
+                                           labels=labels, priority=priority)["identifier"]
             except linear_mod.LinearError as error:
-                done = ", ".join(f["identifier"] for f in filed) or "none"
-                raise linear_mod.LinearError(f"{error} (filed before it: {done})") from error
-        filed.append({"identifier": identifier, "title": item["title"], "value_score": item["value_score"],
-                      "band": item["band"], "effort": item["effort"]})
-    return filed
+                filed = ", ".join(r["identifier"] for r in records) or "none"
+                raise linear_mod.LinearError(f"{error} (filed before it: {filed}; rerun `file`: it skips "
+                                             "what filed.json records)") from error
+            records.append({"number": number, "identifier": identifier, "title": item["title"]})
+            write_json(work_dir / "filed.json", records)
+        printed.append({"identifier": identifier, "title": item["title"], "value_score": item["value_score"],
+                        "band": item["band"], "effort": item["effort"]})
+    return printed
+
+
+def clear_pass(work_dir):
+    """Delete the previous pass's outputs from the work dir, and only those."""
+    for name in PASS_FILES:
+        path = work_dir / name
+        if path.is_file() or path.is_symlink():
+            path.unlink()
+    for name in PASS_DIRS:
+        path = work_dir / name
+        if path.is_symlink() or path.is_file():
+            path.unlink()
+        elif path.is_dir():
+            shutil.rmtree(path)
 
 
 def write_json(path, value):
@@ -499,6 +554,9 @@ def main(argv=None, linear=None, clock=local_now):
     p.add_argument("work_dir", type=Path)
     p.add_argument("--dry-run", action="store_true", help="write record/NN-ticket.md instead of filing")
     args = parser.parse_args(argv)
+    for name in ("out", "work_dir", "config"):
+        if getattr(args, name, None) is not None:
+            setattr(args, name, Path(getattr(args, name)).expanduser())
 
     try:
         if args.command in ("check", "score"):
@@ -519,6 +577,7 @@ def main(argv=None, linear=None, clock=local_now):
             config = project_mod.read_config(args.config)
             result, tickets = prepare(config, args.linear_project, args.discoverer_model, day,
                                       linear or linear_mod.Linear(), clock)
+            clear_pass(args.out)
             write_json(args.out / "tickets.json", tickets)
             write_json(args.out / "prepare.json", result)
     except (DiscoveryError, project_mod.ProjectError) as error:
