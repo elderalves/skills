@@ -191,16 +191,24 @@ class Linear:
         Each issue carries id, identifier, url, title, description, state, labels (names),
         priority, attachment_urls and comments ({created_at, author, from_factory, body}, oldest first).
         """
-        data = self.gql(
-            "query($team: ID!, $project: String!) { issues(first: 250, filter: "
-            "{ team: { id: { eq: $team } }, project: { name: { eqIgnoreCase: $project } } }) "
-            "{ nodes { id identifier url createdAt title description priority state { name } "
-            "labels { nodes { name } } attachments { nodes { url title } } "
-            "comments(first: 250) { nodes { createdAt body user { name } } } } } }",
-            {"team": self.team_id(team), "project": project},
-        )
+        team_id, nodes, after = self.team_id(team), [], None
+        while True:
+            page = self.gql(
+                "query($team: ID!, $project: String!, $after: String) { issues(first: 250, after: $after, filter: "
+                "{ team: { id: { eq: $team } }, project: { name: { eqIgnoreCase: $project } } }) "
+                "{ pageInfo { hasNextPage endCursor } "
+                "nodes { id identifier url createdAt title description priority state { name } "
+                "labels { nodes { name } } attachments { nodes { url title } } "
+                "comments(first: 250) { nodes { createdAt body user { name } } } } } }",
+                {"team": team_id, "project": project, "after": after},
+            )["issues"]
+            nodes.extend(page["nodes"])
+            info = page.get("pageInfo") or {}
+            if not info.get("hasNextPage"):
+                break
+            after = info["endCursor"]
         result = []
-        for node in sorted(data["issues"]["nodes"], key=lambda n: n["createdAt"]):
+        for node in sorted(nodes, key=lambda n: n["createdAt"]):
             comments = sorted(node["comments"]["nodes"], key=lambda c: c["createdAt"])
             result.append({
                 "id": node["id"],

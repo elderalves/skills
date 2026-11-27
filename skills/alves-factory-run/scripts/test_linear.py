@@ -101,6 +101,25 @@ class LinearTests(unittest.TestCase):
         self.assertIs(found["comments"][0]["from_factory"], False)
         self.assertEqual(found["comments"][0]["author"], "Owner")
 
+    def test_list_all_reads_every_page(self):
+        def node(n, created):
+            return {"id": f"i{n}", "identifier": f"ALV-{n}", "url": "u", "createdAt": created, "title": "t",
+                    "description": None, "priority": 0, "state": {"name": "Done"}, "labels": {"nodes": []},
+                    "attachments": {"nodes": []}, "comments": {"nodes": []}}
+        pages = [{"pageInfo": {"hasNextPage": True, "endCursor": "c1"}, "nodes": [node(2, "2026-02-01")]},
+                 {"pageInfo": {"hasNextPage": False, "endCursor": None}, "nodes": [node(1, "2026-01-01")]}]
+        afters = []
+
+        def transport(query, variables):
+            if "teams(" in query:
+                return {"teams": {"nodes": [{"id": "team1", "name": "Alves"}]}}
+            afters.append(variables["after"])
+            return {"issues": pages[len(afters) - 1]}
+
+        found = Linear(transport).list_all("Alves", "Explore")
+        self.assertEqual(afters, [None, "c1"])
+        self.assertEqual([i["identifier"] for i in found], ["ALV-1", "ALV-2"])
+
     def test_link_attaches_url_with_title(self):
         fake = Fake({"attachmentLinkURL": {"attachmentLinkURL": {"success": True}},
                      "issue(id": {"issue": issue(id="i9", identifier="ALV-9")}})
