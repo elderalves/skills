@@ -1,6 +1,10 @@
-"""Run one Discovery pass's deterministic steps: what to look at, how much room, who scores.
+"""Run one Discovery pass's deterministic steps: what to look at, how much room, who scores,
+and which scored candidates become Discovered tickets.
 
     python discovery.py prepare --linear-project <name> --discoverer-model <model> --date YYYY-MM-DD --out <dir> [--config FILE]
+    python discovery.py check <work-dir>
+    python discovery.py score <work-dir>
+    python discovery.py file <work-dir> [--dry-run]
 
 `prepare` finds the projects.json entry of the Linear project (project.py --linear-project),
 which must carry a `discovery` object, and layers the entry's `discovery.policy` file over the
@@ -20,12 +24,28 @@ into <dir>/tickets.json and writes <dir>/prepare.json, which it also prints:
 An entry with an Upstream tracker (jira, github) needs `upstream.file`, and Jira its
 `project_key`, so an approved Discovered ticket can be filed there.
 
-Exit codes: 0 ok, 1 on a Linear or file error, 2 on unusable config or arguments, with
-`error: ...` on stderr.
+The agent then writes <work-dir>/candidates.json and the scorer each scores/<id>.json, in the
+shapes of references/candidate-schema.md.
+
+`check` prints `ok`, or one problem per line naming the candidate (exit 1): a criterion missing,
+not an integer or outside 0-10, an Effort other than S, M or L, a seat other than prepare.json's
+scorer, more than max_candidates candidates, a candidate without `closest.why_different`.
+`score` runs the same check and scores nothing until it passes. Then each candidate's Value
+score is sum(weight * score) / 10, rounded half up, its band High, Medium or Low (below Low it
+is dropped), and the best `room` of them, ties in candidate order, go to selected.json, which
+it prints. `file` files each selected item in Backlog of the Linear project, labelled
+`discovered` (plus `quick-win` for High with Effort S), with priority 2, 3 or 4 by band and the
+description of references/candidate-schema.md; it prints [{identifier, title, value_score,
+band, effort}]. `--dry-run` writes record/NN-ticket.md for each instead and files nothing.
+
+Exit codes: 0 ok, 1 on check problems or a Linear or file error, 2 on unusable config,
+arguments or work-dir input, with `error: ...` on stderr.
 """
 
 import argparse
 import json
+import math
+import re
 import sys
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -37,15 +57,20 @@ import gate  # noqa: E402
 import linear as linear_mod  # noqa: E402
 import project as project_mod  # noqa: E402
 from factory_home import factory_home  # noqa: E402
+from upstream import NOTES_HEADING  # noqa: E402  (where upstream.py ends the public part)
 
 DEFAULT_POLICY = Path(__file__).resolve().parents[1] / "assets" / "default-policy.json"
 CRITERIA = ("impact", "engineering", "reach", "evidence", "urgency")
 BANDS = ("high", "medium", "low")
+EFFORTS = ("S", "M", "L")
+PRIORITY = {"High": 2, "Medium": 3, "Low": 4}
 DEFAULT_CAPS = {"max_new": 3, "max_open": 10}
 NATIVE = project_mod.NATIVE
 DISCOVERED = "discovered"
+QUICK_WIN = "quick-win"
 BACKLOG = "Backlog"
 FILED_UPSTREAM = {"jira", "github"}
+SAFE_ID = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 class DiscoveryError(Exception):
@@ -231,6 +256,225 @@ def prepare(config, name, discoverer_model, day, linear, clock):
     }, tickets
 
 
+# Checking the candidates and their scores (references/candidate-schema.md)
+
+def is_text(value):
+    return isinstance(value, str) and bool(value.strip())
+
+
+def is_text_list(value):
+    return isinstance(value, list) and bool(value) and all(is_text(v) for v in value)
+
+
+def candidate_problems(candidate):
+    problems = [f"{field} must be non-empty text" for field in ("title", "problem", "why")
+                if not is_text(candidate.get(field))]
+    problems += [f"{field} must be a non-empty list of non-empty text" for field in ("acceptance_criteria", "evidence")
+                 if not is_text_list(candidate.get(field))]
+    closest = candidate.get("closest")
+    if not isinstance(closest, dict):
+        problems.append("closest must be {identifier, why_different}: the nearest Factory ticket, or null and why")
+    else:
+        identifier = closest.get("identifier", "")
+        if identifier is not None and not is_text(identifier):
+            problems.append("closest.identifier must be a ticket identifier or null")
+        if not is_text(closest.get("why_different")):
+            problems.append("closest.why_different must say why this differs from the closest ticket")
+    regression = candidate.get("regression_of", "")
+    if regression is not None and not is_text(regression):
+        problems.append("regression_of must be the Done ticket it regresses, or null")
+    return problems
+
+
+def score_problems(work_dir, cid, scorer):
+    name = f"scores/{cid}.json"
+    try:
+        data = read_json(work_dir / "scores" / f"{cid}.json")
+    except FileNotFoundError:
+        return [f"{name} is missing"]
+    except (OSError, ValueError) as error:
+        return [f"cannot read {name}: {error}"]
+    if not isinstance(data, dict):
+        return [f"{name} must be a JSON object"]
+    problems = []
+    scores = data.get("scores")
+    if not isinstance(scores, dict):
+        problems.append(f"scores must be an object of {', '.join(CRITERIA)}")
+    else:
+        for criterion in CRITERIA:
+            value = scores.get(criterion)
+            if criterion not in scores:
+                problems.append(f"scores.{criterion} is missing")
+            elif not isinstance(value, int) or isinstance(value, bool):
+                problems.append(f"scores.{criterion} must be an integer from 0 to 10, not {value!r}")
+            elif not 0 <= value <= 10:
+                problems.append(f"scores.{criterion} is {value}, outside 0 to 10")
+        if scores.keys() - set(CRITERIA):
+            problems.append(f"scores has unknown criteria {sorted(scores.keys() - set(CRITERIA))}")
+    if data.get("effort") not in EFFORTS:
+        problems.append(f"effort must be S, M or L, not {data.get('effort')!r}")
+    rationale = data.get("rationale")
+    missing = [c for c in CRITERIA if not isinstance(rationale, dict) or not is_text(rationale.get(c))]
+    if missing:
+        problems.append(f"rationale needs text for {', '.join(missing)}")
+    seat = data.get("seat")
+    if (not isinstance(seat, dict) or not is_text(seat.get("providerInstanceId")) or not is_text(seat.get("model"))):
+        problems.append("seat must name the scorer's providerInstanceId and model")
+    elif (seat["providerInstanceId"] != scorer["providerInstanceId"]
+          or gate.model_identity(seat["model"]) != gate.model_identity(scorer["model"])):
+        problems.append(f"seat is {seat['providerInstanceId']} {seat['model']}, not the scorer prepare.json "
+                        f"names ({scorer['providerInstanceId']} {scorer['model']})")
+    return problems
+
+
+def check(work_dir):
+    """Every problem with candidates.json and scores/<id>.json; empty when all is well."""
+    work_dir = Path(work_dir)
+    try:
+        prepared = read_json(work_dir / "prepare.json")
+        limit, scorer = prepared["max_candidates"], prepared["scorer"]
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        return [f"cannot read prepare.json: {error!r}"]
+    try:
+        candidates = read_json(work_dir / "candidates.json")
+    except (OSError, ValueError) as error:
+        return [f"cannot read candidates.json: {error}"]
+    if not isinstance(candidates, list):
+        return ["candidates.json must be a list of candidates"]
+    problems = []
+    if len(candidates) > limit:
+        problems.append(f"candidates.json holds {len(candidates)} candidates; max_candidates is {limit}")
+    seen = set()
+    for number, candidate in enumerate(candidates, 1):
+        cid = candidate.get("id") if isinstance(candidate, dict) else None
+        if not isinstance(candidate, dict):
+            problems.append(f"candidate {number}: must be a JSON object")
+            continue
+        if not isinstance(cid, str) or not SAFE_ID.match(cid):
+            problems.append(f"candidate {number}: id {cid!r} must be letters, digits, - or _")
+            continue
+        if cid in seen:
+            problems.append(f"{cid}: the id appears twice in candidates.json")
+            continue
+        seen.add(cid)
+        problems += [f"{cid}: {p}" for p in candidate_problems(candidate) + score_problems(work_dir, cid, scorer)]
+    return problems
+
+
+# Scoring and selecting
+
+def value_score(scores, weights):
+    """Σ weight × score / 10, rounded half up (82.5 is 83)."""
+    return math.floor(sum(weights[c] * scores[c] for c in weights) / 10 + 0.5)
+
+
+def band(score, bands):
+    for name in BANDS:
+        if score >= bands[name]:
+            return name.capitalize()
+    return None
+
+
+def select(candidates, scores_by_id, policy, room):
+    """The candidates that clear the Low band, best Value score first (ties in candidate order), at most room."""
+    weights, items = policy["weights"], []
+    for candidate in candidates:
+        scored = scores_by_id[candidate["id"]]
+        value = value_score(scored["scores"], weights)
+        found = band(value, policy["bands"])
+        if found is None:
+            continue
+        items.append({**candidate, "value_score": value, "band": found, "effort": scored["effort"],
+                      "quick_win": found == "High" and scored["effort"] == "S",
+                      "breakdown": [{"criterion": c, "weight": weights[c], "score": scored["scores"][c],
+                                     "rationale": scored["rationale"][c]} for c in CRITERIA]})
+    items.sort(key=lambda item: -item["value_score"])
+    return items[:max(0, room)]
+
+
+def bullet(text):
+    return "- " + text.strip().replace("\n", "\n  ")
+
+
+def cell(text):
+    return " ".join(text.replace("|", "\\|").split())
+
+
+def render_description(item):
+    """The Discovered ticket's description: the public part, then the Factory notes that stay in Linear."""
+    closest = item["closest"]
+    lines = ["## Problem", "", item["problem"].strip(), "",
+             "## Why it matters", "", item["why"].strip(), "",
+             "## Acceptance criteria", "", *map(bullet, item["acceptance_criteria"]), "",
+             NOTES_HEADING, "",
+             f"**Lens:** {item.get('lens')}", "",
+             "**Evidence:**", "", *map(bullet, item["evidence"]), "",
+             f"**Value score:** {item['value_score']}/100 ({item['band']})", "",
+             "| Criterion | Weight | Score | Rationale |", "|---|---|---|---|",
+             *(f"| {b['criterion']} | {b['weight']} | {b['score']} | {cell(b['rationale'])} |"
+               for b in item["breakdown"]), "",
+             f"**Effort:** {item['effort']}", "",
+             f"**Closest ticket:** {closest.get('identifier') or 'none'}: {closest['why_different'].strip()}"]
+    if item.get("regression_of"):
+        lines += ["", f"**Regression of:** {item['regression_of']}"]
+    return "\n".join(lines) + "\n"
+
+
+def labels_for(item):
+    return [DISCOVERED] + ([QUICK_WIN] if item["quick_win"] else [])
+
+
+def read_input(path):
+    try:
+        return read_json(path)
+    except (OSError, ValueError) as error:
+        raise DiscoveryError(f"cannot read {path}: {error}") from error
+
+
+def score_work_dir(work_dir):
+    """Return (problems, selected); selected.json is written only when there are no problems."""
+    problems = check(work_dir)
+    if problems:
+        return problems, None
+    prepared = read_input(work_dir / "prepare.json")
+    candidates = read_input(work_dir / "candidates.json")
+    scores = {c["id"]: read_input(work_dir / "scores" / f"{c['id']}.json") for c in candidates}
+    selected = [{**item, "lens": prepared["lens"]}
+                for item in select(candidates, scores, prepared["policy"], prepared["room"])]
+    write_json(work_dir / "selected.json", selected)
+    return [], selected
+
+
+def file_selected(work_dir, linear, dry_run):
+    """File each selected item as a Discovered ticket in Backlog (a dry run writes record/NN-ticket.md)."""
+    prepared = read_input(work_dir / "prepare.json")
+    selected = read_input(work_dir / "selected.json")
+    filed = []
+    for number, item in enumerate(selected, 1):
+        labels, priority, description = labels_for(item), PRIORITY[item["band"]], render_description(item)
+        if dry_run:
+            record = work_dir / "record" / f"{number:02d}-ticket.md"
+            record.parent.mkdir(parents=True, exist_ok=True)
+            record.write_text(f"# {item['title']}\n\n"
+                              f"- **Status:** {BACKLOG}\n"
+                              f"- **Project:** {prepared['linear_project']}\n"
+                              f"- **Labels:** {', '.join(labels)}\n"
+                              f"- **Priority:** {priority} ({item['band']})\n\n"
+                              f"---\n\n{description}", encoding="utf-8")
+            identifier = None
+        else:
+            try:
+                identifier = linear.create(prepared["team"], item["title"], state=BACKLOG,
+                                             project=prepared["linear_project"], description=description,
+                                             labels=labels, priority=priority)["identifier"]
+            except linear_mod.LinearError as error:
+                done = ", ".join(f["identifier"] for f in filed) or "none"
+                raise linear_mod.LinearError(f"{error} (filed before it: {done})") from error
+        filed.append({"identifier": identifier, "title": item["title"], "value_score": item["value_score"],
+                      "band": item["band"], "effort": item["effort"]})
+    return filed
+
+
 def write_json(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
@@ -249,18 +493,34 @@ def main(argv=None, linear=None, clock=local_now):
     p.add_argument("--date", required=True, help="today, as YYYY-MM-DD")
     p.add_argument("--out", required=True, type=Path, help="the pass's work dir")
     p.add_argument("--config", default=str(factory_home() / "projects.json"))
+    sub.add_parser("check", help="check candidates.json and scores/<id>.json").add_argument("work_dir", type=Path)
+    sub.add_parser("score", help="rank the scored candidates into selected.json").add_argument("work_dir", type=Path)
+    p = sub.add_parser("file", help="file selected.json as Discovered tickets in Backlog")
+    p.add_argument("work_dir", type=Path)
+    p.add_argument("--dry-run", action="store_true", help="write record/NN-ticket.md instead of filing")
     args = parser.parse_args(argv)
 
     try:
-        try:
-            day = date.fromisoformat(args.date)
-        except ValueError as error:
-            raise DiscoveryError(f"--date must be YYYY-MM-DD: {error}") from error
-        config = project_mod.read_config(args.config)
-        result, tickets = prepare(config, args.linear_project, args.discoverer_model, day,
-                                  linear or linear_mod.Linear(), clock)
-        write_json(args.out / "tickets.json", tickets)
-        write_json(args.out / "prepare.json", result)
+        if args.command in ("check", "score"):
+            problems, result = (check(args.work_dir), None) if args.command == "check" else score_work_dir(args.work_dir)
+            if problems:
+                print("\n".join(problems))
+                return 1
+            if args.command == "check":
+                print("ok")
+                return 0
+        elif args.command == "file":
+            result = file_selected(args.work_dir, linear or linear_mod.Linear(), args.dry_run)
+        else:
+            try:
+                day = date.fromisoformat(args.date)
+            except ValueError as error:
+                raise DiscoveryError(f"--date must be YYYY-MM-DD: {error}") from error
+            config = project_mod.read_config(args.config)
+            result, tickets = prepare(config, args.linear_project, args.discoverer_model, day,
+                                      linear or linear_mod.Linear(), clock)
+            write_json(args.out / "tickets.json", tickets)
+            write_json(args.out / "prepare.json", result)
     except (DiscoveryError, project_mod.ProjectError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
