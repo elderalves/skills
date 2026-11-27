@@ -8,3 +8,4 @@ __pycache__/
 .alves/
 .ux/.env
 *.env
+.ux/
