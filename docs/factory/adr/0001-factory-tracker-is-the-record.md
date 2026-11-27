@@ -2,6 +2,8 @@
 
 Every plan, review, decision and escalation lives on the Factory ticket in the owner's Linear, never in the project's repo or Upstream tracker. Runners are disposable and the factory works in projects it does not own, so each run rebuilds its state from the Factory ticket, and a project receives only the implementation (a PR) plus one concluding comment on its Upstream ticket.
 
+*Amended by [ADR 0009](0009-approved-discovered-tickets-are-filed-upstream.md):* a project also receives the Upstream ticket of a Discovered ticket the owner approved.
+
 ## Considered Options
 
 - Committing `.factory/<ticket>/` artifacts to a branch in the project repo: rejected because client repos would carry factory internals and audit trails would be split across many repos.

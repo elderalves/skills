@@ -24,12 +24,24 @@ def comment(at, body, factory=True):
 
 
 def ticket(state, entered="2026-11-26T11:50:00Z", comments=(), ref="PCS-1", identifier="ALV-1", pr=None):
+    url = f"https://x.atlassian.net/browse/{ref}"
     t = {"id": "i", "identifier": identifier, "url": "u", "state": state, "updated_at": entered,
-         "entered_state_at": entered, "attachment_urls": [f"https://x.atlassian.net/browse/{ref}"],
+         "entered_state_at": entered, "attachment_urls": [url], "attachments": [{"url": url, "title": ref}],
          "comments": list(comments), "ref": ref}
     if pr:
         t["pr"] = pr
     return t
+
+
+def discovered(links, comments=(), identifier="ALV-7"):
+    """A Discovered ticket linked to each (ref, title) on JIRA's site."""
+    attachments = [{"url": f"https://x.atlassian.net/browse/{ref}", "title": title} for ref, title in links]
+    return {"identifier": identifier, "labels": ["discovered"], "comments": list(comments),
+            "attachments": attachments, "attachment_urls": [a["url"] for a in attachments]}
+
+
+FILED_PCS_7 = comment("2026-11-26T10:00:00Z", "## Filed upstream\n\n- **Ref:** `PCS-7`")
+FILING = comment("2026-11-26T09:00:00Z", '## Filing upstream\n\n- **Title:** `"Fix it"`\n- **Since:** 2026-11-26T09:00:00Z')
 
 
 def run(*tickets, upstream=()):
@@ -55,6 +67,73 @@ class Refs(unittest.TestCase):
         self.assertEqual(sweep.ticket_ref({"identifier": "ALV-9", "attachment_urls": []}, NATIVE), "ALV-9")
         t = {"identifier": "ALV-2", "attachment_urls": ["https://x.atlassian.net/browse/PCS-4"]}
         self.assertIsNone(sweep.ticket_ref(t, NATIVE))
+
+    def test_a_github_link_matches_whatever_its_casing_and_takes_the_matchs(self):
+        entry = {"match": "github:acme/widgets#", "repo": "C:/g", "linear_project": "Widgets"}
+        t = {"identifier": "ALV-3", "attachment_urls": ["https://github.com/Acme/Widgets/issues/12"]}
+        self.assertEqual(sweep.ticket_ref(t, entry), "github:acme/widgets#12")
+        self.assertIsNone(sweep.ticket_ref(t, {**entry, "match": "github:acme/gadgets#"}))
+
+    def test_an_unlinked_discovered_ticket_is_its_own_ref(self):
+        t = {"identifier": "ALV-5", "attachment_urls": ["https://figma.com/f"], "labels": ["Discovered"],
+             "attachments": [{"url": "https://figma.com/f", "title": "Design"}], "comments": []}
+        self.assertEqual(sweep.ticket_ref(t, JIRA), "ALV-5")
+
+    def test_an_unlinked_ticket_without_the_label_is_not_the_entrys(self):
+        t = {"identifier": "ALV-6", "attachment_urls": [], "labels": ["bug"]}
+        self.assertIsNone(sweep.ticket_ref(t, JIRA))
+
+    def test_a_discovered_ticket_with_only_an_owner_link_is_its_own_ref(self):
+        # The owner attached a same-tracker ticket for context; the factory has filed nothing.
+        self.assertEqual(sweep.ticket_ref(discovered([("PCS-3", "Related work")]), JIRA), "ALV-7")
+        self.assertEqual(sweep.ticket_ref(discovered([("PCS-3", "PCS-3")]), JIRA), "ALV-7")
+
+    def test_a_filed_discovered_ticket_takes_the_ref_its_filed_comment_names(self):
+        links = [("PCS-3", "Related work"), ("PCS-7", "PCS-7")]
+        for order in (links, links[::-1]):
+            self.assertEqual(sweep.ticket_ref(discovered(order, [FILED_PCS_7]), JIRA), "PCS-7")
+
+    def test_a_half_filed_discovered_ticket_takes_the_link_titled_with_its_ref(self):
+        t = discovered([("PCS-3", "Related work"), ("PCS-7", "PCS-7")], [FILING])
+        self.assertEqual(sweep.ticket_ref(t, JIRA), "PCS-7")
+
+    def test_a_discovered_ticket_belongs_only_to_the_entry_owning_its_projects_discovered_tickets(self):
+        t = discovered([])
+        self.assertIsNone(sweep.ticket_ref(t, {**JIRA, "owns_discovered": False}))
+        self.assertEqual(sweep.ticket_ref(t, {**JIRA, "owns_discovered": True}), "ALV-7")
+
+
+class Discovered(unittest.TestCase):
+    """A Discovered ticket in a non-Native entry, before a planning run linked it upstream."""
+
+    GITHUB = {"match": "github:acme/widgets#", "repo": "C:/g", "upstream": {"type": "github"},
+              "linear_project": "Widgets"}
+
+    def sweep(self, *tickets):
+        [project], notes = sweep.gather([self.GITHUB], "Alves", LIMITS, FakeLinear(tickets), fake_runner({}),
+                                        Path(tempfile.mkdtemp()))
+        self.assertEqual(notes, [])
+        return sweep.decide([project], NOW, LIMITS)
+
+    @staticmethod
+    def unlinked(state, entered, labels=("discovered",), identifier="ALV-5"):
+        t = ticket(state, entered=entered, identifier=identifier)
+        del t["ref"]
+        return {**t, "attachment_urls": [], "attachments": [], "labels": list(labels)}
+
+    def test_a_dropped_ready_trigger_is_retriggered(self):
+        [action] = self.sweep(self.unlinked("Ready", "2026-11-26T11:00:00Z"))["actions"]
+        self.assertEqual((action["kind"], action["ticket"], action["ref"], action["to_status"]),
+                         ("retrigger", "ALV-5", "ALV-5", "Ready"))
+
+    def test_a_planning_run_that_died_before_filing_is_restarted(self):
+        [action] = self.sweep(self.unlinked("Planning", "2026-11-26T08:00:00Z"))["actions"]
+        self.assertEqual((action["kind"], action["ticket"], action["to_status"]), ("restart", "ALV-5", "Ready"))
+
+    def test_an_unlinked_ticket_without_the_label_is_ignored(self):
+        result = self.sweep(self.unlinked("Planning", "2026-11-26T08:00:00Z", labels=("bug",)),
+                            self.unlinked("Ready", "2026-11-26T11:00:00Z", labels=(), identifier="ALV-6"))
+        self.assertEqual((result["actions"], result["deferred"]), ([], []))
 
 
 class StuckRuns(unittest.TestCase):
@@ -226,6 +305,27 @@ class Gather(unittest.TestCase):
         search = next(c for c in runner.calls if c[:4] == ["acli", "jira", "workitem", "search"])
         self.assertIn("project = PCS AND assignee = currentUser()", search[search.index("--jql") + 1])
 
+    def test_a_filed_discovered_ticket_in_review_finds_the_pr_of_the_factorys_link(self):
+        t = {**ticket("In Review", identifier="ALV-7"), **discovered([("PCS-3", "Related work"), ("PCS-7", "PCS-7")],
+                                                                      [FILED_PCS_7])}
+        del t["ref"]
+        runner = fake_runner({
+            "git -C C:/r remote get-url origin": (0, "https://github.com/o/r.git"),
+            "gh auth token": (0, "tok"),
+            "git -C C:/r ls-remote": (0, ""),
+            "gh pr list": (0, json.dumps([{"number": 4, "url": "u4", "state": "MERGED", "mergedAt": "t"}])),
+            "acli jira auth status": (0, "Site: x.atlassian.net"),
+            "acli jira workitem search": (0, "[]"),
+        })
+        [project], notes = sweep.gather([{**JIRA, "github_account": "me"}], "Alves", LIMITS, FakeLinear([t]), runner,
+                                        Path(tempfile.mkdtemp()))
+        self.assertEqual(notes, [])
+        self.assertEqual(project["tickets"][0]["ref"], "PCS-7")
+        pr_list = next(c for c in runner.calls if c[:3] == ["gh", "pr", "list"])
+        self.assertEqual(pr_list[pr_list.index("--head") + 1], "factory/PCS-7")
+        [action] = sweep.decide([project], NOW, LIMITS)["actions"]
+        self.assertEqual((action["kind"], action["ticket"], action["ref"]), ("done", "ALV-7", "PCS-7"))
+
     def test_another_acli_site_skips_jira_with_a_note(self):
         runner = fake_runner({"acli jira auth status": (0, "Site: other.atlassian.net")})
         [project], notes = sweep.gather([JIRA], "Alves", LIMITS, FakeLinear(), runner, Path(tempfile.mkdtemp()))
@@ -271,6 +371,28 @@ class SharedPrefix(unittest.TestCase):
         self.assertEqual([len(p["upstream"]) for p in projects], [1, 0])
         self.assertEqual([[t["ref"] for t in p["tickets"]] for p in projects], [[], ["RTP-2"]])
         self.assertEqual(sum(c[:4] == ["acli", "jira", "workitem", "search"] for c in runner.calls), 1)
+
+
+class SharedLinearProject(unittest.TestCase):
+    """Two Jira prefixes filing into one Linear project; the entry with `discovery` owns its Discovered tickets."""
+
+    def test_an_unlinked_discovered_ticket_is_planned_only_under_the_discovery_entry(self):
+        root = Path(tempfile.mkdtemp())
+        site = {"type": "jira", "site": "x.atlassian.net"}
+        dxpx = {"match": "DXPX-", "repo": str(root), "linear_project": "Metronome", "upstream": site}
+        ai = {**dxpx, "match": "AI-", "discovery": {}}
+        config = {"projects": [dxpx, ai]}
+        notes = []
+        entries = sweep.select(config, ["DXPX-"], notes) + sweep.select(config, ["AI-"], notes)
+        self.assertEqual([e["owns_discovered"] for e in entries], [False, True])
+        t = ticket("Ready", entered="2026-11-26T11:00:00Z", identifier="ALV-5")
+        del t["ref"]
+        t = {**t, "attachment_urls": [], "attachments": [], "labels": ["discovered"]}
+        runner = fake_runner({"acli jira auth status": (0, "Site: other.atlassian.net")})
+        projects, _ = sweep.gather(entries, "Alves", LIMITS, FakeLinear([t]), runner, root)
+        self.assertEqual([[t["ref"] for t in p["tickets"]] for p in projects], [[], ["ALV-5"]])
+        [action] = sweep.decide(projects, NOW, LIMITS)["actions"]
+        self.assertEqual((action["kind"], action["ticket"], action["project"]), ("retrigger", "ALV-5", "AI-"))
 
 
 class Apply(unittest.TestCase):

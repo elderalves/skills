@@ -34,11 +34,40 @@ Maps an Upstream ticket to the project the factory works in. Example: [projects.
   - `repo`: path of the project checkout on the runner: absolute, or starting with `~/` for the home directory, so one `projects.json` serves Windows, Linux and macOS. Keep checkouts at `~/Projects/<org>/repos/<name>` on every machine (on Windows a junction from `~/Projects` to another drive or folder works).
   - `base_branch`: the branch implementation branches start from and PRs target.
   - `upstream.type`: `jira`, `github` or `linear` (Native tickets), per [trackers.md](trackers.md); `upstream.site` is the Jira site, which `acli` must be signed in to.
+  - `upstream.file`: an object, which may be `{}`; the owner's opt-in to filing approved Discovered tickets on this Upstream tracker ([trackers.md](trackers.md), **Filing a Discovered ticket**). A `jira` or `github` entry needs it to run Discovery (see **Discovery** below); a Native entry files nothing upstream and leaves it out. Jira reads `project_key` (default: `match` without its trailing `-`), `issue_type` (default `Task`) and `labels` (a list, default none); GitHub needs no fields and files in the entry's repo. **The Jira project's default assignee must be Unassigned for filing:** `acli` cannot create a ticket unassigned, and a default assignee who is the owner fires the "assigned" rule before the Factory ticket is linked. A run that finds a default assignee on a new ticket reports it as `default_assignee`.
   - `linear_project`: the Linear project the factory files this entry's Factory tickets in (`linear.py create --project`), so per-project T3 triggers see them. Native entries leave it out: their `match` names the project.
   - `policy`: optional project policy override, layered over the owner's.
   - `github_account`: optional; the gh account that can reach the repo. See **GitHub account** below.
   - `pr_ready`: optional; `draft` (the default) leaves every PR a draft until the owner promotes it, and `auto` lets the implementation run promote it when the ready check passes ([ready-check.md](../../alves-factory-implement/references/ready-check.md)). Only this switch is per project: the ready check's conditions are fixed.
   - `council`: optional; this project's Council seats, as the name of an entry in `councils` or an inline object.
+  - `discovery`: optional; an object, which may be `{}`, that turns on the daily Discovery pass for this entry. See **Discovery** below.
+
+## Discovery
+
+An entry with a `discovery` object runs a daily Discovery pass (`alves-factory-discover`, Task F in the [T3 wiring](../../../docs/factory/t3-wiring.md)) that files the best few improvements it finds as Discovered tickets in Backlog of the entry's Linear project. An entry without one never runs Discovery. Every field is optional:
+
+| Field | Meaning |
+|---|---|
+| `lenses` | A non-empty list of Lens names, replacing the policy's list. The pass's Lens is `lenses[date.toordinal() % len(lenses)]`. |
+| `max_new` | The most Discovered tickets one pass files; a non-negative integer, default `3`. |
+| `max_open` | The most Discovered tickets left in Backlog; a non-negative integer, default `10`. A pass files at most `max(0, min(max_new, max_open - open))`, where `open` counts the Backlog tickets labelled `discovered`, and stops before looking when that is `0`. |
+| `scorer` | `{"target": {...}}` and nothing else: the seat that scores every candidate, a `target` with `providerInstanceId`, `model` and optional `options`, as in **Council targets**. Default: the entry's resolved Council `testing-risk` seat. A scorer of the same model as the Discovery agent (compared as the model floor compares them) is a config error. |
+| `policy` | A path, or a list of paths, of Discovery policy files, each deep-merged in order over the [bundled Discovery policy](../../alves-factory-discover/assets/default-policy.json): `weights` (exactly impact, engineering, reach, evidence and urgency), `bands` (`high` ≥ `medium` ≥ `low`), `max_candidates` and `lenses`. It is separate from the entry's gate `policy`, and `~/.alves-factory/policy.json` is not one of its layers. |
+
+A `jira` or `github` entry also needs `upstream.file` (it may be `{}`), or the pass stops with exit `2`: an approved Discovered ticket is filed upstream before it is planned, and `upstream.file` is the owner's consent to that (`upstream.py file` refuses with exit `2` without it). For Jira, also set the project's default assignee to Unassigned (see `upstream.file` above).
+
+When several entries file into one Linear project (such as several Jira prefixes of one repo), exactly one of them may carry `discovery`. That entry is the one Discovery runs for and the one that project's Discovered tickets resolve to (`project.py --linear-project`), so they are filed on its Upstream tracker and planned in its repo. With none or more than one carrying it, `project.py --linear-project` alone stops with exit `2`.
+
+```json
+{
+  "match": "PROJ-",
+  "upstream": { "type": "jira", "site": "example.atlassian.net", "file": { "project_key": "PROJ", "labels": ["improvement"] } },
+  "linear_project": "Proj",
+  "discovery": { "max_new": 2, "scorer": { "target": { "providerInstanceId": "codex", "model": "gpt-6.2-sol" } } }
+}
+```
+
+The example omits unrelated project fields.
 
 ## Council targets
 
@@ -153,8 +182,10 @@ Find the run's entry with the resolver, never by reading `projects.json` by hand
 ```sh
 python <alves-factory-run>/scripts/project.py --ref <upstream-ref> --linear-project <the Factory ticket's Linear project>
 python <alves-factory-run>/scripts/project.py --ref <upstream-ref> --candidates   # triage: every entry of the prefix
-python <alves-factory-run>/scripts/project.py --linear-project <name>             # a Native ticket
+python <alves-factory-run>/scripts/project.py --linear-project <name>             # the entry a Linear project names
 ```
+
+`--linear-project` alone resolves the entry a Linear project names: a Native ticket's `linear-project:` entry, or a non-Native entry with that `linear_project` (a Discovered ticket awaiting filing, and Discovery itself). When several non-Native entries share that Linear project, it picks the single one carrying `discovery` (see **Discovery**). Callers tell the two apart by the printed `match`: a `linear-project:` prefix is Native, anything else is not.
 
 It applies the match rules above and prints the entry as JSON with `repo` absolute for this machine (`--candidates`: a list, skipping with a `warning:` any entry whose repo is missing here). Use that `repo`, never the raw value. `--ref` without `--linear-project` works only for a prefix with one entry. Exit `2` (no matching entry, an ambiguous ref, a shared prefix without distinct `linear_project`s, an unreadable config, or a `repo` that is not a directory here) and an unknown `upstream.type` stop the run as **Blocked**, with the resolver's message.
 
