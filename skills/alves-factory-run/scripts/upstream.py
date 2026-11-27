@@ -255,7 +255,10 @@ class Upstream:
             key = self.created_key(out)
             created = {"ref": key, "url": self.url_root + key}
             # acli cannot create "unassigned": the project's default assignee applies. Say so, don't fail.
-            holder = self.assignee(key)
+            try:
+                holder = self.assignee(key)
+            except UpstreamError:
+                holder = None
             return {**created, "default_assignee": holder} if holder else created
         found = re.search(re.escape(self.url_root) + r"(\d+)", out, re.IGNORECASE)
         if not found:
