@@ -7,18 +7,20 @@ The Linear project selects the projects.json entry (project.py --linear-project)
 `upstream.type` must be `jira` or `github` (references/trackers.md, **Filing a Discovered ticket**).
 
 `file` follows ADR 0009, and a restart repeats it safely:
-1. A Factory ticket already linked to an Upstream ticket of this tracker is done: it prints
-   that ticket and makes no other call.
+1. A Factory ticket already linked to an Upstream ticket of this tracker only finishes what a
+   run that died after linking left undone: it is renamed `<ref>: <title>` when its title lacks
+   the ref, and the Upstream ticket is assigned to the owner when nobody holds it. A ticket
+   someone else holds is never reassigned.
 2. The latest factory comment headed `## Filing upstream` holds the filing intent (its Title and
    Since lines); with none, one is posted naming the ticket's title and the current time.
 3. A ticket the owner reported with that exact title, created at or after Since, is reused;
    otherwise one is created **unassigned**: summary = the title, body = the description up to
    the `## Factory notes` line, then `_Found by automated analysis._`. No Factory URL, factory
    label or score goes upstream.
-4. The Factory ticket is linked to it and renamed `<ref>: <title>`.
-5. Only then is the Upstream ticket assigned to the owner.
+4. The Factory ticket is renamed `<ref>: <title>`, then linked to it (later stages key on the link).
+5. Only then is the Upstream ticket assigned to the owner; a reused one only when nobody holds it.
 
-It prints {"ref", "url", "reused", "already_linked"}. `search` prints the open Upstream tickets
+It prints {"ref", "url", "reused", "already_linked", "assigned"}. `search` prints the open Upstream tickets
 matching the words, as [{"ref", "title", "url"}].
 
 Jira goes through `acli`, after checking that `acli jira auth status` names `upstream.site`; it
@@ -249,6 +251,24 @@ class Upstream:
             raise UpstreamError(f"acli created a ticket but printed no key: {out.strip()[:300]}")
         return found.group(0)
 
+    def assignee(self, ref):
+        """Who holds the ticket (a name, email, account ID or login), or None when nobody does."""
+        if self.type == "jira":
+            out = self.acli("reading the assignee", "view", ref, "--fields", "assignee", "--json")
+            data = self.json_out("reading the assignee", out)
+            item = data[0] if isinstance(data, list) and data else data
+            person = ((item or {}).get("fields") or {}).get("assignee")
+            if not person:
+                return None
+            if isinstance(person, dict):
+                return next((person[k] for k in ("displayName", "emailAddress", "accountId") if person.get(k)),
+                            "someone")
+            return str(person)
+        out = self.gh("reading the assignees", "view", ref.rsplit("#", 1)[-1], "--repo", self.repo,
+                      "--json", "assignees")
+        people = (self.json_out("reading the assignees", out) or {}).get("assignees") or []
+        return next((p.get("login") or "someone" for p in people), None)
+
     def assign_owner(self, ref):
         if self.type == "jira":
             self.acli("assigning the ticket", "assign", "--key", ref, "--assignee", "@me", "--yes")
@@ -286,12 +306,25 @@ def filing_intent(comments):
     return None
 
 
+def assign_if_unassigned(upstream, ref):
+    """Assign the ticket to the owner unless somebody holds it; True when it was assigned now."""
+    if upstream.assignee(ref) is not None:
+        return False
+    upstream.assign_owner(ref)
+    return True
+
+
 def file_discovered(linear, upstream, issue_ref, now_iso):
     issue = linear.issue(issue_ref)
     for attachment in issue["attachments"]["nodes"]:
         ref = upstream.ref_of_url(attachment["url"])
         if ref:
-            return {"ref": ref, "url": attachment["url"], "reused": False, "already_linked": True}
+            # A run died after linking: finish the rename and the assignment, nothing else.
+            if not issue["title"].startswith(f"{ref}: "):
+                linear.update(issue_ref, title=f"{ref}: {issue['title']}")
+            assigned = assign_if_unassigned(upstream, ref)
+            return {"ref": ref, "url": attachment["url"], "reused": False, "already_linked": True,
+                    "assigned": assigned}
     upstream.check_site()
     intent = filing_intent(linear.comments(issue_ref))
     if intent is None:
@@ -300,10 +333,15 @@ def file_discovered(linear, upstream, issue_ref, now_iso):
     title, since = intent
     found = upstream.find_filed(title, since)
     ticket = found or upstream.create(title, public_part(issue.get("description")))
-    linear.link(issue_ref, ticket["url"], ticket["ref"])
     linear.update(issue_ref, title=f"{ticket['ref']}: {title}")
-    upstream.assign_owner(ticket["ref"])
-    return {"ref": ticket["ref"], "url": ticket["url"], "reused": found is not None, "already_linked": False}
+    linear.link(issue_ref, ticket["url"], ticket["ref"])
+    if found:
+        assigned = assign_if_unassigned(upstream, ticket["ref"])
+    else:
+        upstream.assign_owner(ticket["ref"])  # created unassigned a moment ago
+        assigned = True
+    return {"ref": ticket["ref"], "url": ticket["url"], "reused": found is not None, "already_linked": False,
+            "assigned": assigned}
 
 
 def main(argv=None, linear=None, run=None):
