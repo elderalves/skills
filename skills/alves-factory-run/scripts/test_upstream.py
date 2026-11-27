@@ -4,6 +4,7 @@ import io
 import json
 import tempfile
 import unittest
+from datetime import timedelta
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
@@ -109,6 +110,23 @@ class Text(unittest.TestCase):
         self.assertEqual(upstream.search_words('Add aria-label to "icon" buttons (a11y)?'),
                          "Add aria label to icon buttons a11y")
 
+    def test_search_words_lowercase_boolean_words(self):
+        self.assertEqual(upstream.search_words("Support NOT NULL columns"), "Support not NULL columns")
+        self.assertEqual(upstream.search_words("Cats AND dogs OR birds ANDROID"), "Cats and dogs or birds ANDROID")
+
+    def test_intent_title_round_trips_through_markdown(self):
+        title = 'Remove `__init__` side effects in *core* "loader" \\ path _now_'
+        body = upstream.intent_body(title, "2026-11-27T12:00:00+00:00")
+        [line] = [l for l in body.splitlines() if l.startswith("- **Title:**")]
+        # one code span holding a JSON string, so Markdown leaves __init__, * and _ alone
+        self.assertRegex(line, r'^- \*\*Title:\*\* `"[^`]*"`$')
+        comment = {"created_at": "x", "from_factory": True, "body": f"[alves-factory]\n\n{body}"}
+        self.assertEqual(upstream.filing_intent([comment]), (title, "2026-11-27T12:00:00+00:00"))
+
+    def test_intent_in_the_old_plain_form_still_reads(self):
+        self.assertEqual(upstream.filing_intent([intent("Plain title", "2026-11-27T12:00:00Z")]),
+                         ("Plain title", "2026-11-27T12:00:00Z"))
+
 
 class Jira(unittest.TestCase):
     def test_find_filed_ignores_fuzzy_and_earlier_matches(self):
@@ -129,12 +147,40 @@ class Jira(unittest.TestCase):
                               'AND summary ~ "Add aria label to icon buttons" AND created >= "2026-11-26"')
         self.assertEqual(args[args.index("--fields") + 1], "key,summary,created")
 
+    def find(self, since, *items, title="Add labels"):
+        runner = fake_runner({"acli jira auth status": (0, f"Site: {SITE}"),
+                              "acli jira workitem search": hits(*items)})
+        return upstream.Upstream(jira_entry(), run=runner).find_filed(title, since)
+
+    def test_find_filed_compares_created_in_utc(self):
+        # 12:10 UTC is 14:50 before Since (15:00 UTC); compared without offsets it would look later.
+        self.assertIsNone(self.find("2026-11-27T12:00:00-03:00", ("RTP-1", "Add labels", "2026-11-27T12:10:00.000+0000")))
+
+    def test_find_filed_needs_the_exact_title(self):
+        self.assertIsNone(self.find("2026-11-27T12:00:00Z", ("RTP-1", "Add labels!", "2026-11-27T13:00:00.000+0000")))
+
+    def test_find_filed_allows_ten_minutes_of_clock_skew(self):
+        self.assertEqual(upstream.CLOCK_SKEW, timedelta(minutes=10))
+        since = "2026-11-27T12:00:00Z"
+        self.assertEqual(self.find(since, ("RTP-1", "Add labels", "2026-11-27T11:52:00.000+0000"))["ref"], "RTP-1")
+        self.assertIsNone(self.find(since, ("RTP-1", "Add labels", "2026-11-27T11:49:00.000+0000")))
+
+    def test_create_reports_a_default_assignee(self):
+        runner = fake_runner({"acli jira auth status": (0, f"Site: {SITE}"),
+                              "acli jira workitem create": (0, json.dumps({"key": "RTP-8"})),
+                              "acli jira workitem view RTP-8": (0, json.dumps(
+                                  {"key": "RTP-8", "fields": {"assignee": {"displayName": "Pat"}}}))})
+        self.assertEqual(upstream.Upstream(jira_entry(), run=runner).create("t", "b"),
+                         {"ref": "RTP-8", "url": f"https://{SITE}/browse/RTP-8", "default_assignee": "Pat"})
+
     def test_create_is_unassigned_with_type_and_labels(self):
         runner = fake_runner({"acli jira auth status": (0, f"Site: {SITE}"),
-                              "acli jira workitem create": (0, json.dumps({"key": "RTP-8", "id": "1"}))})
+                              "acli jira workitem create": (0, json.dumps({"key": "RTP-8", "id": "1"})),
+                              "acli jira workitem view RTP-8": (0, json.dumps({"key": "RTP-8",
+                                                                               "fields": {"assignee": None}}))})
         up = upstream.Upstream(jira_entry(issue_type="Story", labels=["a11y", "ui"]), run=runner)
         self.assertEqual(up.create("Add labels", "body"), {"ref": "RTP-8", "url": f"https://{SITE}/browse/RTP-8"})
-        args = runner.calls[-1][0]
+        args = next(a for a, _ in runner.calls if a[3:4] == ["create"])
         self.assertEqual(args[:4], ["acli", "jira", "workitem", "create"])
         for flag, value in (("--project", "RTP"), ("--type", "Story"), ("--summary", "Add labels"),
                             ("--label", "a11y,ui")):
@@ -179,6 +225,7 @@ class FileDiscovered(unittest.TestCase):
             "acli jira auth status": (0, f"Site: {SITE}"),
             "acli jira workitem search": (0, "[]"),
             "acli jira workitem create": (0, json.dumps({"key": "RTP-7"})),
+            "acli jira workitem view RTP-7": (0, json.dumps({"key": "RTP-7", "fields": {"assignee": None}})),
             "acli jira workitem assign": (0, ""),
         }, log)
         linear = FakeLinear(log=log)
@@ -187,8 +234,8 @@ class FileDiscovered(unittest.TestCase):
                                   "reused": False, "already_linked": False, "assigned": True})
         self.assertEqual([name for _, name in log], [
             "acli jira auth status", "comment", "acli jira workitem search", "acli jira workitem create",
-            "update", "link", "acli jira workitem assign"])
-        self.assertEqual(linear.posted, ["## Filing upstream\n\n- **Title:** Add aria label to icon buttons\n"
+            "acli jira workitem view", "update", "link", "acli jira workitem assign"])
+        self.assertEqual(linear.posted, ['## Filing upstream\n\n- **Title:** `"Add aria label to icon buttons"`\n'
                                          f"- **Since:** {self.NOW}"])
         create = next(args for args, _ in runner.calls if args[3:4] == ["create"])
         self.assertNotIn("--assignee", create)
@@ -198,6 +245,19 @@ class FileDiscovered(unittest.TestCase):
         self.assertNotIn("score", body)
         self.assertEqual(linear.linked, [("ALV-9", f"https://{SITE}/browse/RTP-7", "RTP-7")])
         self.assertEqual(linear.updated, [("ALV-9", "RTP-7: Add aria label to icon buttons", None)])
+
+    def test_file_surfaces_the_jira_default_assignee(self):
+        runner = fake_runner({
+            "acli jira auth status": (0, f"Site: {SITE}"),
+            "acli jira workitem search": (0, "[]"),
+            "acli jira workitem create": (0, json.dumps({"key": "RTP-7"})),
+            "acli jira workitem view RTP-7": (0, json.dumps({"key": "RTP-7",
+                                                             "fields": {"assignee": {"displayName": "Pat"}}})),
+            "acli jira workitem assign": (0, ""),
+        })
+        result = upstream.file_discovered(FakeLinear(), upstream.Upstream(jira_entry(), run=runner), "ALV-9", self.NOW)
+        self.assertEqual(result["default_assignee"], "Pat")
+        self.assertTrue(result["assigned"])
 
     def test_file_restart_reuses_ticket_found_by_intent_title(self):
         since = "2026-11-27T10:00:00+00:00"
@@ -289,19 +349,36 @@ class GitHub(unittest.TestCase):
         self.assertNotIn("--assignee", args)
         self.assertEqual(env["GH_TOKEN"], "tok")
 
-    def test_find_filed_and_assign_and_search(self):
+    def test_create_matches_the_printed_url_whatever_its_casing(self):
+        runner = self.runner(**{"gh issue create": (0, "https://github.com/Acme/Widgets/issues/12\n")})
+        self.assertEqual(upstream.Upstream(GITHUB, run=runner).create("t", "b"),
+                         {"ref": "github:acme/widgets#12", "url": "https://github.com/Acme/Widgets/issues/12"})
+
+    def test_find_filed_reads_the_rest_listing_not_the_search_index(self):
+        listing = "repos/acme/widgets/issues?state=all&creator=me-login&sort=created&direction=desc&per_page=100"
         runner = self.runner(**{
-            "gh issue list --repo acme/widgets --author": (0, json.dumps([
-                {"number": 3, "title": "Add labels", "url": "u3", "createdAt": "2026-11-27T09:00:00Z"},
-                {"number": 4, "title": "Add labels!", "url": "u4", "createdAt": "2026-11-27T13:00:00Z"},
-                {"number": 5, "title": "Add labels", "url": "u5", "createdAt": "2026-11-27T13:00:00Z"}])),
+            "gh api user": (0, "me-login\n"),
+            f"gh api {listing}": (0, json.dumps([
+                {"number": 6, "title": "Add labels", "html_url": "u6", "created_at": "2026-11-27T12:30:00Z",
+                 "pull_request": {"url": "p6"}},
+                {"number": 5, "title": "Add labels", "html_url": "u5", "created_at": "2026-11-27T13:00:00Z"},
+                {"number": 4, "title": "Add labels!", "html_url": "u4", "created_at": "2026-11-27T12:20:00Z"},
+                {"number": 3, "title": "Add labels", "html_url": "u3", "created_at": "2026-11-27T09:00:00Z"}])),
+        })
+        up = upstream.Upstream(GITHUB, run=runner)
+        self.assertEqual(up.find_filed("Add labels", "2026-11-27T12:00:00Z"), {"ref": "github:acme/widgets#5", "url": "u5"})
+        api = [(args, env) for args, env in runner.calls if args[:2] == ["gh", "api"]]
+        self.assertEqual([args for args, _ in api], [["gh", "api", "user", "--jq", ".login"], ["gh", "api", listing]])
+        self.assertTrue(all(env["GH_TOKEN"] == "tok" for _, env in api))
+        self.assertFalse(any("--search" in args for args, _ in runner.calls))
+
+    def test_assign_and_search(self):
+        runner = self.runner(**{
             "gh issue list --repo acme/widgets --state open": (0, json.dumps([
                 {"number": 9, "title": "Labels", "url": "u9"}])),
             "gh issue edit": (0, ""),
         })
         up = upstream.Upstream(GITHUB, run=runner)
-        self.assertEqual(up.find_filed("Add labels", "2026-11-27T12:00:00Z"), {"ref": "github:acme/widgets#5", "url": "u5"})
-        self.assertIn("in:title Add labels", runner.calls[-1][0])
         self.assertEqual(up.search_open("labels"), [{"ref": "github:acme/widgets#9", "title": "Labels", "url": "u9"}])
         up.assign_owner("github:acme/widgets#5")
         self.assertEqual(runner.calls[-1][0], ["gh", "issue", "edit", "5", "--repo", "acme/widgets",
@@ -321,6 +398,15 @@ class GitHub(unittest.TestCase):
         self.assertEqual(linear.updated, [])
         nobody = self.runner(**{"gh issue view": (0, json.dumps({"assignees": []}))})
         self.assertIsNone(upstream.Upstream(GITHUB, run=nobody).assignee("github:acme/widgets#12"))
+
+    def test_linked_issue_in_another_casing_is_recognised(self):
+        linear = FakeLinear(title="github:acme/widgets#12: Add labels",
+                            attachments=["https://github.com/Acme/Widgets/issues/12"])
+        runner = self.runner(**{"gh issue view 12": (0, json.dumps({"assignees": [{"login": "me"}]}))})
+        result = upstream.file_discovered(linear, upstream.Upstream(GITHUB, run=runner), "ALV-9",
+                                          "2026-11-27T12:00:00Z")
+        self.assertEqual((result["ref"], result["already_linked"]), ("github:acme/widgets#12", True))
+        self.assertEqual(linear.updated, [])
 
 
 class Cli(unittest.TestCase):

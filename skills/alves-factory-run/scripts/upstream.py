@@ -13,15 +13,17 @@ The Linear project selects the projects.json entry (project.py --linear-project)
    someone else holds is never reassigned.
 2. The latest factory comment headed `## Filing upstream` holds the filing intent (its Title and
    Since lines); with none, one is posted naming the ticket's title and the current time.
-3. A ticket the owner reported with that exact title, created at or after Since, is reused;
-   otherwise one is created **unassigned**: summary = the title, body = the description up to
-   the `## Factory notes` line, then `_Found by automated analysis._`. No Factory URL, factory
-   label or score goes upstream.
+3. A ticket the owner reported with that exact title, created at or after Since less
+   CLOCK_SKEW (in UTC), is reused (GitHub: read from the REST issue listing, never the lagging
+   search index); otherwise one is created **unassigned**: summary = the title, body = the
+   description up to the `## Factory notes` line, then `_Found by automated analysis._`. No
+   Factory URL, factory label or score goes upstream.
 4. The Factory ticket is renamed `<ref>: <title>`, then linked to it (later stages key on the link).
 5. Only then is the Upstream ticket assigned to the owner; a reused one only when nobody holds it.
 
-It prints {"ref", "url", "reused", "already_linked", "assigned"}. `search` prints the open Upstream tickets
-matching the words, as [{"ref", "title", "url"}].
+It prints {"ref", "url", "reused", "already_linked", "assigned"}, plus "default_assignee" when
+Jira gave a new ticket its project's default assignee (the owner should set that to
+Unassigned). `search` prints the open Upstream tickets matching the words, as [{"ref", "title", "url"}].
 
 Jira goes through `acli`, after checking that `acli jira auth status` names `upstream.site`; it
 never switches sites. GitHub goes through `gh`, with GH_TOKEN from `gh auth token --user
@@ -53,6 +55,11 @@ SITE_LINE = re.compile(r"Site:\s*(\S+)")
 INTENT_LINE = re.compile(r"^- \*\*(Title|Since):\*\*[ \t]*(.*?)\s*$", re.MULTILINE)
 # Characters Jira's text search (and GitHub's search syntax) read as operators, not words.
 SEARCH_OPERATORS = re.compile(r'[+\-&|!(){}\[\]^~*?\\:"/]')
+SEARCH_BOOLEANS = re.compile(r"\b(AND|OR|NOT)\b")
+# Since is the runner's clock and `created` the tracker's: a ticket created up to this much
+# "before" Since still counts, so a fast runner clock cannot hide the ticket it just created.
+# The exact title and the owner as reporter keep the wider window safe.
+CLOCK_SKEW = timedelta(minutes=10)
 
 
 class UpstreamError(Exception):
@@ -82,8 +89,10 @@ def jql_string(text):
 
 def search_words(text):
     """The words of text, without characters a tracker's search would read as operators
-    (a hyphen would exclude the word after it), so a fuzzy search still finds the title."""
-    return " ".join(SEARCH_OPERATORS.sub(" ", text).split())
+    (a hyphen would exclude the word after it, NOT would negate it), so a fuzzy search still
+    finds the title."""
+    words = SEARCH_BOOLEANS.sub(lambda m: m.group(1).lower(), SEARCH_OPERATORS.sub(" ", text))
+    return " ".join(words.split())
 
 
 def parse_time(value):
@@ -122,7 +131,7 @@ class Upstream:
             self.repo = match[len("github:"):-1]
             self.url_root = f"https://{GITHUB_HOST}/{self.repo}/issues/"
             self.account = account or entry.get("github_account")
-            self.token = None
+            self.token = self.login = None
         else:
             raise ConfigError(f"{entry.get('match')!r} has upstream.type {self.type!r}; "
                               "only jira and github tickets are filed upstream")
@@ -140,6 +149,10 @@ class Upstream:
         return self.call(what, ["acli", "jira", "workitem", *args])
 
     def gh(self, what, *args):
+        """A `gh issue …` command with the account's token."""
+        return self.gh_any(what, "issue", *args)
+
+    def gh_any(self, what, *args):
         if self.token is None:
             account, host = self.account, GITHUB_HOST
             if not account:
@@ -152,7 +165,7 @@ class Upstream:
             if code != 0 or not token.strip():
                 raise UpstreamError(f"no gh token for account {account!r} on {host}")
             self.token = token.strip()
-        return self.call(what, ["gh", "issue", *args], env={**os.environ, "GH_TOKEN": self.token})
+        return self.call(what, ["gh", *args], env={**os.environ, "GH_TOKEN": self.token})
 
     def json_out(self, what, out):
         try:
@@ -193,22 +206,29 @@ class Upstream:
                 for i in self.json_out("searching open issues", out)]
 
     def find_filed(self, title, since_iso):
-        """The earliest ticket the owner reported with exactly this title at or after since_iso, or None."""
-        since = parse_time(since_iso)
-        words = search_words(title)
+        """The earliest ticket the owner reported with exactly this title, created at or after
+        since_iso less CLOCK_SKEW (compared in UTC), or None."""
+        since = parse_time(since_iso) - CLOCK_SKEW
+        what = "looking for a ticket already filed"
         if self.type == "jira":
+            words = search_words(title)
             day = (since - timedelta(days=1)).strftime("%Y-%m-%d")
             clause = f" AND summary ~ {jql_string(words)}" if words else ""
             jql = f"project = {self.project_key} AND reporter = currentUser(){clause} AND created >= \"{day}\""
             hits = [(i["key"], (i.get("fields") or {}).get("summary"), (i.get("fields") or {}).get("created"))
-                    for i in self.jira_items("looking for a ticket already filed", jql, "key,summary,created", 50)]
+                    for i in self.jira_items(what, jql, "key,summary,created", 50)]
             hits = [(key, self.url_root + key, summary, created) for key, summary, created in hits]
         else:
-            out = self.gh("looking for an issue already filed", "list", "--repo", self.repo, "--author", "@me",
-                          "--state", "all", "--search", f"in:title {words}",
-                          "--json", "number,title,url,createdAt", "--limit", "50")
-            hits = [(self.ref(i["number"]), i["url"], i["title"], i.get("createdAt"))
-                    for i in self.json_out("looking for an issue already filed", out)]
+            # The REST listing, not the search index: the index lags, and a restart seconds after
+            # a create must still find the issue.
+            if self.login is None:
+                self.login = self.gh_any("reading the gh account's login", "api", "user", "--jq", ".login").strip()
+                if not self.login:
+                    raise UpstreamError("gh api user printed no login")
+            out = self.gh_any(what, "api", f"repos/{self.repo}/issues?state=all&creator={self.login}"
+                                            "&sort=created&direction=desc&per_page=100")
+            hits = [(self.ref(i["number"]), i.get("html_url"), i.get("title"), i.get("created_at"))
+                    for i in self.json_out(what, out) or [] if isinstance(i, dict) and "pull_request" not in i]
         filed = [(parse_time(created), ref, url) for ref, url, summary, created in hits
                  if isinstance(summary, str) and summary.strip() == title.strip()]
         filed = sorted(f for f in filed if f[0] >= since)
@@ -233,8 +253,11 @@ class Upstream:
             os.unlink(path)
         if self.type == "jira":
             key = self.created_key(out)
-            return {"ref": key, "url": self.url_root + key}
-        found = re.search(re.escape(self.url_root) + r"(\d+)", out)
+            created = {"ref": key, "url": self.url_root + key}
+            # acli cannot create "unassigned": the project's default assignee applies. Say so, don't fail.
+            holder = self.assignee(key)
+            return {**created, "default_assignee": holder} if holder else created
+        found = re.search(re.escape(self.url_root) + r"(\d+)", out, re.IGNORECASE)
         if not found:
             raise UpstreamError(f"gh issue create printed no issue URL: {out.strip()[:300]}")
         return {"ref": self.ref(found.group(1)), "url": found.group(0)}
@@ -282,8 +305,8 @@ class Upstream:
         return f"github:{self.repo}#{number}"
 
     def ref_of_url(self, url):
-        """The ref of a URL on this tracker, or None."""
-        if not isinstance(url, str) or not url.startswith(self.url_root):
+        """The ref of a URL on this tracker, or None. Hosts and GitHub owner/repo ignore case."""
+        if not isinstance(url, str) or not url.casefold().startswith(self.url_root.casefold()):
             return None
         rest = url[len(self.url_root):].split("?", 1)[0].split("#", 1)[0].strip("/")
         if self.type == "jira":
@@ -292,6 +315,25 @@ class Upstream:
 
 
 # Filing a Discovered ticket
+
+def intent_body(title, since):
+    """The filing intent comment. The title is a JSON string in a code span, so Markdown
+    normalisation (`__init__` to bold, `*` escaped) cannot change it; a backtick is written as
+    \\u0060, so it cannot close the span."""
+    literal = json.dumps(title, ensure_ascii=False).replace("`", "\\u0060")
+    return f"{FILING_HEADING}\n\n- **Title:** `{literal}`\n- **Since:** {since}"
+
+
+def intent_title(value):
+    """The title from an intent's Title line: the JSON code span, or the older plain text."""
+    span = re.fullmatch(r"`(\".*\")`", value)
+    if span:
+        try:
+            return json.loads(span.group(1))
+        except ValueError:
+            pass
+    return value
+
 
 def filing_intent(comments):
     """(title, since) from the latest factory comment headed `## Filing upstream`, or None."""
@@ -302,7 +344,7 @@ def filing_intent(comments):
             if missing:
                 raise UpstreamError(f"the {FILING_HEADING!r} comment of {comment.get('created_at')} has no "
                                     f"{' or '.join(missing)} line; fix it or delete it, then rerun")
-            return lines["Title"], lines["Since"]
+            return intent_title(lines["Title"]), lines["Since"]
     return None
 
 
@@ -329,7 +371,7 @@ def file_discovered(linear, upstream, issue_ref, now_iso):
     intent = filing_intent(linear.comments(issue_ref))
     if intent is None:
         intent = (issue["title"], now_iso)
-        linear.comment(issue_ref, f"{FILING_HEADING}\n\n- **Title:** {intent[0]}\n- **Since:** {intent[1]}")
+        linear.comment(issue_ref, intent_body(*intent))
     title, since = intent
     found = upstream.find_filed(title, since)
     ticket = found or upstream.create(title, public_part(issue.get("description")))
@@ -340,8 +382,11 @@ def file_discovered(linear, upstream, issue_ref, now_iso):
     else:
         upstream.assign_owner(ticket["ref"])  # created unassigned a moment ago
         assigned = True
-    return {"ref": ticket["ref"], "url": ticket["url"], "reused": found is not None, "already_linked": False,
-            "assigned": assigned}
+    result = {"ref": ticket["ref"], "url": ticket["url"], "reused": found is not None, "already_linked": False,
+              "assigned": assigned}
+    if ticket.get("default_assignee"):
+        result["default_assignee"] = ticket["default_assignee"]
+    return result
 
 
 def main(argv=None, linear=None, run=None):
