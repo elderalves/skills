@@ -50,6 +50,7 @@ import github_account  # noqa: E402
 from factory_home import factory_home  # noqa: E402
 import project as project_mod  # noqa: E402
 import linear as linear_mod  # noqa: E402
+import upstream as upstream_mod  # noqa: E402
 
 CONFIG = factory_home() / "projects.json"
 TRIAGE_ROOT = factory_home() / "triage"
@@ -100,19 +101,34 @@ def ref_from_url(url):
 def ticket_ref(ticket, entry):
     """The ticket's upstream ref when it belongs to entry, else None.
 
-    A Native ticket, and a Discovered ticket a planning run has not yet filed upstream (no
-    Upstream link), have no upstream ref: each is its own, its Linear identifier."""
+    A Native ticket has no upstream ref: it is its own, its Linear identifier. A Discovered
+    ticket belongs to the entry that owns its Linear project's Discovered tickets (select stamps
+    `owns_discovered`); its ref is the one of the Upstream link the factory made
+    (upstream.factory_link), and until there is one, its Linear identifier. A link the owner
+    attached for context is never its Upstream link."""
     match = entry["match"]
-    linked = list(filter(None, map(ref_from_url, ticket["attachment_urls"])))
     if match.startswith(NATIVE):
+        linked = list(filter(None, map(ref_from_url, ticket["attachment_urls"])))
         return None if linked else ticket["identifier"]
-    if not linked and DISCOVERED in (label.lower() for label in ticket.get("labels", [])):
-        return ticket["identifier"]
-    for ref in linked:
+    if DISCOVERED in (label.lower() for label in ticket.get("labels", [])):
+        if not entry.get("owns_discovered", True):
+            return None
+        return discovered_ref(ticket, entry) or ticket["identifier"]
+    for ref in filter(None, map(ref_from_url, ticket["attachment_urls"])):
         # GitHub owner and repo names are case-insensitive, and a link keeps gh's casing.
         if ref.startswith(match) or (match.startswith("github:") and ref.lower().startswith(match.lower())):
             return match + ref[len(match):]
     return None
+
+
+def discovered_ref(ticket, entry):
+    """The ref of the Upstream link the factory made on a Discovered ticket, or None."""
+    try:
+        tracker = upstream_mod.Upstream(entry)
+    except upstream_mod.ConfigError:
+        return None  # a tracker the factory never files on, so no link of its own
+    link = upstream_mod.factory_link(tracker, ticket["attachments"], ticket["comments"])
+    return link[0] if link else None
 
 
 def linear_project(entry):
@@ -311,7 +327,8 @@ def select(config, matches, notes):
         resolved, errors = [], []
         for entry in found:
             try:
-                resolved.append(project_mod.resolve_entry(entry))
+                resolved.append({**project_mod.resolve_entry(entry),
+                                 "owns_discovered": project_mod.owns_discovered(config, entry)})
             except project_mod.ProjectError as error:
                 errors.append((entry.get("linear_project") or match, str(error)))
         if not resolved or (errors and len(found) == 1):

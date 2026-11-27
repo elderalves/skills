@@ -173,6 +173,13 @@ class SharedPrefixTest(unittest.TestCase):
         ]}
         self.assertEqual(project.find(config, linear_project="Metronome")["match"], "AI-")
 
+    def test_owns_discovered_is_the_lone_entry_or_the_one_with_discovery(self):
+        dxpx = {"match": "DXPX-", "repo": "~/Projects/pcs", "linear_project": "Metronome"}
+        ai = {"match": "AI-", "repo": "~/Projects/pcs", "linear_project": "metronome", "discovery": {}}
+        pcs = {"match": "PCS-", "repo": "~/Projects/pcs", "linear_project": "AgileKit"}
+        config = {"projects": [dxpx, ai, pcs]}
+        self.assertEqual([project.owns_discovered(config, e) for e in (dxpx, ai, pcs)], [False, True, True])
+
     def test_shared_linear_project_with_two_discovery_entries_refuses(self):
         config = {"projects": [
             {"match": "DXPX-", "repo": "~/Projects/pcs", "linear_project": "Metronome", "discovery": {}},

@@ -233,6 +233,23 @@ class LinearTests(unittest.TestCase):
         self.assertEqual([c["from_factory"] for c in found["comments"]], [False, True])
         self.assertEqual(fake.called("issues(")[0]["states"], ["In Review"])
 
+    def test_list_issues_carries_each_attachments_title(self):
+        # The sweep tells the factory's own Upstream link on a Discovered ticket by its title.
+        node = {
+            "id": "i1", "identifier": "ALV-15", "url": "u", "createdAt": "2026-01-01T00:00:00Z",
+            "updatedAt": "2026-01-01T00:00:00Z", "state": {"name": "In Review"}, "labels": {"nodes": []},
+            "attachments": {"nodes": [{"url": "https://x.atlassian.net/browse/RTP-3", "title": "Owner's context"},
+                                      {"url": "https://x.atlassian.net/browse/RTP-7", "title": "RTP-7"}]},
+            "history": {"nodes": []}, "comments": {"nodes": []},
+        }
+        fake = Fake({"teams(": {"teams": {"nodes": [{"id": "team1", "name": "Alves"}]}},
+                     "issues(": {"issues": {"nodes": [node]}}})
+        [found] = Linear(fake).list_issues("Alves", "AgileKit", ["In Review"])
+        self.assertEqual(found["attachments"], [
+            {"url": "https://x.atlassian.net/browse/RTP-3", "title": "Owner's context"},
+            {"url": "https://x.atlassian.net/browse/RTP-7", "title": "RTP-7"}])
+        self.assertEqual(found["attachment_urls"], [a["url"] for a in found["attachments"]])
+
     def test_list_issues_carries_each_issues_label_names(self):
         node = {
             "id": "i1", "identifier": "ALV-14", "url": "u", "createdAt": "2026-01-01T00:00:00Z",

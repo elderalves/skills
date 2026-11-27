@@ -78,6 +78,14 @@ def same_name(a, b):
     return isinstance(a, str) and isinstance(b, str) and a.casefold() == b.casefold()
 
 
+def owns_discovered(config, entry):
+    """Whether a prefix entry owns the Discovered tickets of its Linear project: it is the only
+    prefix entry filing tickets there, or, when several share it, it carries `discovery`."""
+    sharing = [e for e in entries(config) if not e["match"].startswith(NATIVE)
+               and same_name(e.get("linear_project"), entry.get("linear_project"))]
+    return len(sharing) <= 1 or "discovery" in entry
+
+
 def prefix_entries(config, ref):
     """Every entry sharing the first prefix that matches ref, in config order (unresolved)."""
     upstream = [e for e in entries(config) if not e["match"].startswith(NATIVE)]
@@ -135,7 +143,7 @@ def find(config, ref=None, linear_project=None, match=None):
             found = [e for e in entries(config) if not e["match"].startswith(NATIVE)
                      and same_name(e.get("linear_project"), linear_project)]
             if len(found) > 1:
-                discovering = [e for e in found if "discovery" in e]
+                discovering = [e for e in found if owns_discovered(config, e)]
                 if len(discovering) != 1:
                     raise ProjectError(f"{len(found)} entries file tickets in Linear project {linear_project}; "
                                        f"their matches are {[e['match'] for e in found]}, so pass --ref too, "
