@@ -135,9 +135,13 @@ def find(config, ref=None, linear_project=None, match=None):
             found = [e for e in entries(config) if not e["match"].startswith(NATIVE)
                      and same_name(e.get("linear_project"), linear_project)]
             if len(found) > 1:
-                raise ProjectError(f"{len(found)} entries file tickets in Linear project {linear_project}; "
-                                   f"their matches are {[e['match'] for e in found]}, so pass --ref too, "
-                                   "or give each entry its own linear_project")
+                discovering = [e for e in found if "discovery" in e]
+                if len(discovering) != 1:
+                    raise ProjectError(f"{len(found)} entries file tickets in Linear project {linear_project}; "
+                                       f"their matches are {[e['match'] for e in found]}, so pass --ref too, "
+                                       "or give exactly one of them a discovery object, or each its own "
+                                       "linear_project")
+                found = discovering
         what = f"Linear project {linear_project!r}"
     if not found:
         raise ProjectError(f"no projects.json entry matches {what}")

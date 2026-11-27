@@ -166,6 +166,21 @@ class SharedPrefixTest(unittest.TestCase):
         with self.assertRaisesRegex(project.ProjectError, "2 entries file tickets in Linear project"):
             project.find(config, linear_project="AgileKit")
 
+    def test_shared_linear_project_picks_the_entry_with_discovery(self):
+        config = {"projects": [
+            {"match": "DXPX-", "repo": "~/Projects/pcs", "linear_project": "Metronome"},
+            {"match": "AI-", "repo": "~/Projects/pcs", "linear_project": "Metronome", "discovery": {}},
+        ]}
+        self.assertEqual(project.find(config, linear_project="Metronome")["match"], "AI-")
+
+    def test_shared_linear_project_with_two_discovery_entries_refuses(self):
+        config = {"projects": [
+            {"match": "DXPX-", "repo": "~/Projects/pcs", "linear_project": "Metronome", "discovery": {}},
+            {"match": "AI-", "repo": "~/Projects/pcs", "linear_project": "Metronome", "discovery": {}},
+        ]}
+        with self.assertRaisesRegex(project.ProjectError, "exactly one of them a discovery object"):
+            project.find(config, linear_project="Metronome")
+
     def test_main_finds_prefix_entry_by_linear_project_alone(self):
         path = self.home / "projects.json"
         path.write_text(json.dumps(self.config), encoding="utf-8")
