@@ -54,7 +54,9 @@ An entry with a `discovery` object runs a daily Discovery pass (`alves-factory-d
 | `scorer` | `{"target": {...}}` and nothing else: the seat that scores every candidate, a `target` with `providerInstanceId`, `model` and optional `options`, as in **Council targets**. Default: the entry's resolved Council `testing-risk` seat. A scorer of the same model as the Discovery agent (compared as the model floor compares them) is a config error. |
 | `policy` | A path, or a list of paths, of Discovery policy files, each deep-merged in order over the [bundled Discovery policy](../../alves-factory-discover/assets/default-policy.json): `weights` (exactly impact, engineering, reach, evidence and urgency), `bands` (`high` ≥ `medium` ≥ `low`), `max_candidates` and `lenses`. It is separate from the entry's gate `policy`, and `~/.alves-factory/policy.json` is not one of its layers. |
 
-A `jira` or `github` entry also needs `upstream.file` (it may be `{}`), or the pass stops with exit `2`: an approved Discovered ticket is filed upstream before it is planned, and `upstream.file` is the owner's consent to that. For Jira, also set the project's default assignee to Unassigned (see `upstream.file` above).
+A `jira` or `github` entry also needs `upstream.file` (it may be `{}`), or the pass stops with exit `2`: an approved Discovered ticket is filed upstream before it is planned, and `upstream.file` is the owner's consent to that (`upstream.py file` refuses with exit `2` without it). For Jira, also set the project's default assignee to Unassigned (see `upstream.file` above).
+
+When several entries file into one Linear project (such as several Jira prefixes of one repo), exactly one of them may carry `discovery`. That entry is the one Discovery runs for and the one that project's Discovered tickets resolve to (`project.py --linear-project`), so they are filed on its Upstream tracker and planned in its repo. With none or more than one carrying it, `project.py --linear-project` alone stops with exit `2`.
 
 ```json
 {
@@ -180,8 +182,10 @@ Find the run's entry with the resolver, never by reading `projects.json` by hand
 ```sh
 python <alves-factory-run>/scripts/project.py --ref <upstream-ref> --linear-project <the Factory ticket's Linear project>
 python <alves-factory-run>/scripts/project.py --ref <upstream-ref> --candidates   # triage: every entry of the prefix
-python <alves-factory-run>/scripts/project.py --linear-project <name>             # a Native ticket
+python <alves-factory-run>/scripts/project.py --linear-project <name>             # the entry a Linear project names
 ```
+
+`--linear-project` alone resolves the entry a Linear project names: a Native ticket's `linear-project:` entry, or a non-Native entry with that `linear_project` (a Discovered ticket awaiting filing, and Discovery itself). When several non-Native entries share that Linear project, it picks the single one carrying `discovery` (see **Discovery**). Callers tell the two apart by the printed `match`: a `linear-project:` prefix is Native, anything else is not.
 
 It applies the match rules above and prints the entry as JSON with `repo` absolute for this machine (`--candidates`: a list, skipping with a `warning:` any entry whose repo is missing here). Use that `repo`, never the raw value. `--ref` without `--linear-project` works only for a prefix with one entry. Exit `2` (no matching entry, an ambiguous ref, a shared prefix without distinct `linear_project`s, an unreadable config, or a `repo` that is not a directory here) and an unknown `upstream.type` stop the run as **Blocked**, with the resolver's message.
 

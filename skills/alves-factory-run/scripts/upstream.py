@@ -6,22 +6,30 @@
 The Linear project selects the projects.json entry (project.py --linear-project). Its
 `upstream.type` must be `jira` or `github` (references/trackers.md, **Filing a Discovered ticket**).
 
-`file` follows ADR 0009, and a restart repeats it safely:
-1. A Factory ticket already linked to an Upstream ticket of this tracker only finishes what a
-   run that died after linking left undone: it is renamed `<ref>: <title>` when its title lacks
-   the ref, and the Upstream ticket is assigned to the owner when nobody holds it. A ticket
-   someone else holds is never reassigned.
+`file` needs the entry's `upstream.file` object, the owner's opt-in (exit 2 without it; `search`
+only reads and runs without it). It follows ADR 0009, and a restart repeats it safely:
+1. Only a link the factory made is the Upstream link: an attachment to this tracker whose ref is
+   the one the latest factory `## Filed upstream` comment names, or, while a filing is half done
+   (a factory `## Filing upstream` comment exists), one titled exactly the ref of its URL. Other
+   links, such as one the owner attached for context, are ignored.
+   - Linked and recorded as filed: nothing to do; no tracker command runs.
+   - Linked but not recorded: a run died after linking. The Factory ticket is renamed
+     `<ref>: <title>` when its title lacks the ref, the Upstream ticket is assigned to the owner
+     when nobody holds it (never reassigned), and `## Filed upstream` is posted.
 2. The latest factory comment headed `## Filing upstream` holds the filing intent (its Title and
    Since lines); with none, one is posted naming the ticket's title and the current time.
 3. A ticket the owner reported with that exact title, created at or after Since less
    CLOCK_SKEW (in UTC), is reused (GitHub: read from the REST issue listing, never the lagging
    search index); otherwise one is created **unassigned**: summary = the title, body = the
-   description up to the `## Factory notes` line, then `_Found by automated analysis._`. No
-   Factory URL, factory label or score goes upstream.
+   description up to the `## Factory notes` line, then the closing line (GitHub: Markdown;
+   Jira: plain text, see jira_text). No Factory URL, factory label or score goes upstream.
 4. The Factory ticket is renamed `<ref>: <title>`, then linked to it (later stages key on the link).
 5. Only then is the Upstream ticket assigned to the owner; a reused one only when nobody holds it.
+6. Last, a factory comment `## Filed upstream` records the ref (and any default assignee), so
+   later runs never touch the Upstream ticket again.
 
-It prints {"ref", "url", "reused", "already_linked", "assigned"}, plus "default_assignee" when
+It prints {"ref", "url", "reused", "already_linked", "assigned", "finished"} ("finished": this
+call completed the filing; false when it was already complete), plus "default_assignee" when
 Jira gave a new ticket its project's default assignee (the owner should set that to
 Unassigned). `search` prints the open Upstream tickets matching the words, as [{"ref", "title", "url"}].
 
@@ -48,11 +56,16 @@ import project as project_mod  # noqa: E402
 from factory_home import factory_home  # noqa: E402
 
 FILING_HEADING = "## Filing upstream"
+FILED_HEADING = "## Filed upstream"
 CLOSING_LINE = "_Found by automated analysis._"
+PLAIN_CLOSING_LINE = "Found by automated analysis."
 NOTES_HEADING = "## Factory notes"
 GITHUB_HOST = "github.com"
 SITE_LINE = re.compile(r"Site:\s*(\S+)")
 INTENT_LINE = re.compile(r"^- \*\*(Title|Since):\*\*[ \t]*(.*?)\s*$", re.MULTILINE)
+FILED_REF_LINE = re.compile(r"^- \*\*Ref:\*\*[ \t]*`?([^`\s]+)`?\s*$", re.MULTILINE)
+HEADING_LINE = re.compile(r"^#{1,6}[ \t]+(.*?)[ \t]*#*[ \t]*$")
+INLINE_CODE = re.compile(r"`([^`\n]*)`")
 # Characters Jira's text search (and GitHub's search syntax) read as operators, not words.
 SEARCH_OPERATORS = re.compile(r'[+\-&|!(){}\[\]^~*?\\:"/]')
 SEARCH_BOOLEANS = re.compile(r"\b(AND|OR|NOT)\b")
@@ -72,14 +85,35 @@ class ConfigError(UpstreamError):
 
 # Text
 
-def public_part(description):
-    """The description up to the first line that is exactly `## Factory notes`, then the closing line."""
+def public_text(description):
+    """The description up to the first line that is exactly `## Factory notes`, without a closing line."""
     lines = (description or "").replace("\r\n", "\n").split("\n")
     cut = next((i for i, line in enumerate(lines) if line.rstrip() == NOTES_HEADING), len(lines))
     text = "\n".join(lines[:cut]).strip()
     if text.endswith(CLOSING_LINE):
         text = text[: -len(CLOSING_LINE)].rstrip()
+    return text
+
+
+def public_part(description):
+    """The public text as Markdown, then the closing line: the GitHub body."""
+    text = public_text(description)
     return f"{text}\n\n{CLOSING_LINE}" if text else CLOSING_LINE
+
+
+def jira_text(description):
+    """The public text as plain text, since acli files the body as text, not Markdown: a heading
+    line becomes its text followed by a blank line, `- ` bullets stay, inline code loses its
+    backticks, and the closing line is `Found by automated analysis.`."""
+    out = []
+    for line in public_text(description).split("\n"):
+        heading = HEADING_LINE.match(line)
+        if heading:
+            out += [heading.group(1), ""]
+        elif line.strip() or (out and out[-1] != ""):
+            out.append(INLINE_CODE.sub(r"\1", line))
+    text = "\n".join(out).strip()
+    return f"{text}\n\n{PLAIN_CLOSING_LINE}" if text else PLAIN_CLOSING_LINE
 
 
 def jql_string(text):
@@ -114,11 +148,13 @@ class Upstream:
         self.entry, self.run = entry, run
         tracker = entry.get("upstream") or {}
         self.type = tracker.get("type")
+        # The owner's opt-in to filing; search only reads, so it runs without one.
+        self.filing = tracker.get("file") if isinstance(tracker.get("file"), dict) else None
         if self.type == "jira":
             self.site = tracker.get("site")
             if not self.site:
                 raise ConfigError(f"{entry.get('match')!r}: upstream.site is not set")
-            filing = tracker.get("file") or {}
+            filing = self.filing or {}
             self.project_key = filing.get("project_key") or entry["match"].rstrip("-")
             self.issue_type = filing.get("issue_type") or "Task"
             self.labels = list(filing.get("labels") or [])
@@ -174,6 +210,17 @@ class Upstream:
             raise UpstreamError(f"{what} printed no JSON: {out.strip()[:300]}") from error
 
     # Operations
+
+    def require_filing(self):
+        """Filing needs the entry's `upstream.file` object: the owner's opt-in."""
+        if self.filing is None:
+            raise ConfigError(f"{self.entry.get('match')!r} has no upstream.file object: the owner has not "
+                              "opted in to filing Discovered tickets on this tracker (add \"file\": {} to "
+                              "its upstream)")
+
+    def body(self, description):
+        """What filing sends as the ticket's body: plain text for Jira, Markdown for GitHub."""
+        return jira_text(description) if self.type == "jira" else public_part(description)
 
     def check_site(self):
         """Jira only: acli must be signed in to this project's site. It never switches sites."""
@@ -236,6 +283,7 @@ class Upstream:
 
     def create(self, title, body):
         """A new ticket, left unassigned: {ref, url}. The body goes through a temp file."""
+        self.require_filing()
         handle, path = tempfile.mkstemp(suffix=".md", prefix="upstream-")
         try:
             with os.fdopen(handle, "w", encoding="utf-8", newline="\n") as f:
@@ -351,6 +399,43 @@ def filing_intent(comments):
     return None
 
 
+def filed_body(ref, default_assignee=None):
+    """The comment that records a filing as complete. The ref sits in a code span, so Markdown
+    normalisation cannot change it."""
+    body = f"{FILED_HEADING}\n\n- **Ref:** `{ref}`"
+    return f"{body}\n- **Default assignee:** {default_assignee}" if default_assignee else body
+
+
+def filed_ref(comments):
+    """The ref the latest factory comment headed `## Filed upstream` names, or None."""
+    for comment in reversed(comments):
+        if comment.get("from_factory") and FILED_HEADING in comment.get("body", ""):
+            found = FILED_REF_LINE.search(comment["body"])
+            if found:
+                return found.group(1)
+    return None
+
+
+def factory_link(upstream, attachments, comments):
+    """(ref, url, filed) of the Upstream link the factory made, or None. On a Discovered ticket,
+    a link to this tracker counts only when its ref is the one `## Filed upstream` names
+    (filed), or, while a filing is half done (a `## Filing upstream` intent exists), when its
+    title is exactly the ref of its URL, as the factory titles its links. Any other link, such as
+    one the owner attached for context, is not the Upstream link."""
+    done = filed_ref(comments)
+    linked = [(upstream.ref_of_url(a.get("url")), a) for a in attachments]
+    linked = [(ref, a) for ref, a in linked if ref]
+    if done:
+        for ref, attachment in linked:
+            if ref == done:
+                return ref, attachment["url"], True
+    if any(c.get("from_factory") and FILING_HEADING in c.get("body", "") for c in comments):
+        for ref, attachment in linked:
+            if (attachment.get("title") or "").strip() == ref:
+                return ref, attachment["url"], False
+    return None
+
+
 def assign_if_unassigned(upstream, ref):
     """Assign the ticket to the owner unless somebody holds it; True when it was assigned now."""
     if upstream.assignee(ref) is not None:
@@ -360,24 +445,30 @@ def assign_if_unassigned(upstream, ref):
 
 
 def file_discovered(linear, upstream, issue_ref, now_iso):
+    upstream.require_filing()
     issue = linear.issue(issue_ref)
-    for attachment in issue["attachments"]["nodes"]:
-        ref = upstream.ref_of_url(attachment["url"])
-        if ref:
-            # A run died after linking: finish the rename and the assignment, nothing else.
-            if not issue["title"].startswith(f"{ref}: "):
-                linear.update(issue_ref, title=f"{ref}: {issue['title']}")
-            assigned = assign_if_unassigned(upstream, ref)
-            return {"ref": ref, "url": attachment["url"], "reused": False, "already_linked": True,
-                    "assigned": assigned}
+    comments = linear.comments(issue_ref)
+    link = factory_link(upstream, issue["attachments"]["nodes"], comments)
+    if link:
+        ref, url, filed = link
+        result = {"ref": ref, "url": url, "reused": False, "already_linked": True}
+        if filed:
+            # Filed and recorded: the Upstream ticket belongs to its team now; touch nothing.
+            return {**result, "assigned": False, "finished": False}
+        # A run died after linking: finish the rename and the assignment, then record it.
+        if not issue["title"].startswith(f"{ref}: "):
+            linear.update(issue_ref, title=f"{ref}: {issue['title']}")
+        assigned = assign_if_unassigned(upstream, ref)
+        linear.comment(issue_ref, filed_body(ref))
+        return {**result, "assigned": assigned, "finished": True}
     upstream.check_site()
-    intent = filing_intent(linear.comments(issue_ref))
+    intent = filing_intent(comments)
     if intent is None:
         intent = (issue["title"], now_iso)
         linear.comment(issue_ref, intent_body(*intent))
     title, since = intent
     found = upstream.find_filed(title, since)
-    ticket = found or upstream.create(title, public_part(issue.get("description")))
+    ticket = found or upstream.create(title, upstream.body(issue.get("description")))
     linear.update(issue_ref, title=f"{ticket['ref']}: {title}")
     linear.link(issue_ref, ticket["url"], ticket["ref"])
     if found:
@@ -385,8 +476,9 @@ def file_discovered(linear, upstream, issue_ref, now_iso):
     else:
         upstream.assign_owner(ticket["ref"])  # created unassigned a moment ago
         assigned = True
+    linear.comment(issue_ref, filed_body(ticket["ref"], ticket.get("default_assignee")))
     result = {"ref": ticket["ref"], "url": ticket["url"], "reused": found is not None, "already_linked": False,
-              "assigned": assigned}
+              "assigned": assigned, "finished": True}
     if ticket.get("default_assignee"):
         result["default_assignee"] = ticket["default_assignee"]
     return result
@@ -408,6 +500,8 @@ def main(argv=None, linear=None, run=None):
     try:
         entry = project_mod.find(project_mod.read_config(args.config), linear_project=args.linear_project)
         tracker = Upstream(entry, args.account, run or github_account.run)
+        if args.command == "file":
+            tracker.require_filing()
     except (project_mod.ProjectError, ConfigError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
@@ -417,6 +511,9 @@ def main(argv=None, linear=None, run=None):
         else:
             now = datetime.now(timezone.utc).isoformat(timespec="seconds")
             result = file_discovered(linear or linear_mod.Linear(), tracker, args.issue, now)
+    except ConfigError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
     except (UpstreamError, linear_mod.LinearError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1

@@ -20,7 +20,7 @@ def jira_entry(repo="C:/r", **file):
 
 
 GITHUB = {"match": "github:acme/widgets#", "repo": "C:/w", "github_account": "me",
-          "upstream": {"type": "github"}}
+          "upstream": {"type": "github", "file": {}}}
 
 
 def fake_runner(responses, log=None):
@@ -54,7 +54,8 @@ class FakeLinear:
                  attachments=(), comments=(), log=None):
         self.data = {"id": "u1", "identifier": "ALV-9", "title": title, "description": description,
                      "url": "https://linear.app/alves/issue/ALV-9", "project": {"name": "Explore Frontend"},
-                     "attachments": {"nodes": [{"url": u, "title": u} for u in attachments]}}
+                     "attachments": {"nodes": [{"url": a, "title": a} if isinstance(a, str)
+                                               else {"url": a[0], "title": a[1]} for a in attachments]}}
         self.stored = list(comments)
         self.log = [] if log is None else log
         self.posted, self.linked, self.updated = [], [], []
@@ -86,6 +87,11 @@ def intent(title, since):
             "body": f"[alves-factory]\n\n## Filing upstream\n\n- **Title:** {title}\n- **Since:** {since}"}
 
 
+def filed(ref, at="2026-11-27T10:01:00+00:00"):
+    return {"created_at": at, "from_factory": True,
+            "body": f"[alves-factory]\n\n## Filed upstream\n\n- **Ref:** `{ref}`"}
+
+
 class Text(unittest.TestCase):
     def test_public_part_cuts_at_factory_notes(self):
         self.assertEqual(upstream.public_part("## Problem\nx\n\n## Factory notes\nscore 80"),
@@ -102,6 +108,14 @@ class Text(unittest.TestCase):
         self.assertEqual(upstream.public_part(text),
                          "## Factory notes are out of scope\nx\n\n_Found by automated analysis._")
         self.assertEqual(upstream.public_part(None), "_Found by automated analysis._")
+
+    def test_jira_text_renders_the_public_part_as_plain_text(self):
+        text = ("## Problem\nThe `IconButton` has no label.\n\n## Acceptance criteria\n\n- `aria-label` set\n"
+                "- tests pass\n\n## Factory notes\nscore 80")
+        self.assertEqual(upstream.jira_text(text),
+                         "Problem\n\nThe IconButton has no label.\n\nAcceptance criteria\n\n- aria-label set\n"
+                         "- tests pass\n\nFound by automated analysis.")
+        self.assertEqual(upstream.jira_text(None), "Found by automated analysis.")
 
     def test_jql_string_escapes_quotes_and_backslashes(self):
         self.assertEqual(upstream.jql_string('a "b" \\c'), '"a \\"b\\" \\\\c"')
@@ -210,6 +224,22 @@ class Jira(unittest.TestCase):
         with self.assertRaisesRegex(upstream.UpstreamError, "unauthorized"):
             upstream.Upstream(jira_entry(), run=runner).create("t", "b")
 
+    def test_without_upstream_file_search_works_but_filing_is_refused(self):
+        entry = jira_entry()
+        del entry["upstream"]["file"]
+        runner = fake_runner({"acli jira auth status": (0, f"Site: {SITE}"),
+                              "acli jira workitem search": hits(("RTP-3", "Labels", "2026-01-01"))})
+        up = upstream.Upstream(entry, run=runner)
+        self.assertEqual([t["ref"] for t in up.search_open("labels")], ["RTP-3"])
+        calls = len(runner.calls)
+        with self.assertRaisesRegex(upstream.ConfigError, "upstream.file"):
+            up.create("t", "b")
+        linear = FakeLinear()
+        with self.assertRaisesRegex(upstream.ConfigError, "upstream.file"):
+            upstream.file_discovered(linear, up, "ALV-9", "2026-11-27T12:00:00+00:00")
+        self.assertEqual(len(runner.calls), calls)
+        self.assertEqual((linear.posted, linear.updated, linear.linked), ([], [], []))
+
     def test_other_tracker_types_are_refused(self):
         for entry in ({"match": "linear-project:X", "upstream": {"type": "linear"}}, {"match": "X-"}):
             with self.assertRaises(upstream.UpstreamError):
@@ -231,16 +261,17 @@ class FileDiscovered(unittest.TestCase):
         linear = FakeLinear(log=log)
         result = upstream.file_discovered(linear, upstream.Upstream(jira_entry(), run=runner), "ALV-9", self.NOW)
         self.assertEqual(result, {"ref": "RTP-7", "url": f"https://{SITE}/browse/RTP-7",
-                                  "reused": False, "already_linked": False, "assigned": True})
+                                  "reused": False, "already_linked": False, "assigned": True, "finished": True})
         self.assertEqual([name for _, name in log], [
             "acli jira auth status", "comment", "acli jira workitem search", "acli jira workitem create",
-            "acli jira workitem view", "update", "link", "acli jira workitem assign"])
+            "acli jira workitem view", "update", "link", "acli jira workitem assign", "comment"])
         self.assertEqual(linear.posted, ['## Filing upstream\n\n- **Title:** `"Add aria label to icon buttons"`\n'
-                                         f"- **Since:** {self.NOW}"])
+                                         f"- **Since:** {self.NOW}",
+                                         "## Filed upstream\n\n- **Ref:** `RTP-7`"])
         create = next(args for args, _ in runner.calls if args[3:4] == ["create"])
         self.assertNotIn("--assignee", create)
         [body] = runner.bodies
-        self.assertTrue(body.endswith(upstream.CLOSING_LINE))
+        self.assertEqual(body, "Problem\n\nx\n\nFound by automated analysis.")
         self.assertNotIn("linear.app", body)
         self.assertNotIn("score", body)
         self.assertEqual(linear.linked, [("ALV-9", f"https://{SITE}/browse/RTP-7", "RTP-7")])
@@ -255,9 +286,11 @@ class FileDiscovered(unittest.TestCase):
                                                              "fields": {"assignee": {"displayName": "Pat"}}})),
             "acli jira workitem assign": (0, ""),
         })
-        result = upstream.file_discovered(FakeLinear(), upstream.Upstream(jira_entry(), run=runner), "ALV-9", self.NOW)
+        linear = FakeLinear()
+        result = upstream.file_discovered(linear, upstream.Upstream(jira_entry(), run=runner), "ALV-9", self.NOW)
         self.assertEqual(result["default_assignee"], "Pat")
         self.assertTrue(result["assigned"])
+        self.assertEqual(linear.posted[-1], "## Filed upstream\n\n- **Ref:** `RTP-7`\n- **Default assignee:** Pat")
 
     def test_file_restart_reuses_ticket_found_by_intent_title(self):
         since = "2026-11-27T10:00:00+00:00"
@@ -275,7 +308,7 @@ class FileDiscovered(unittest.TestCase):
         result = upstream.file_discovered(linear, upstream.Upstream(jira_entry(), run=runner), "ALV-9", self.NOW)
         self.assertTrue(result["reused"])
         self.assertEqual(result["ref"], "RTP-7")
-        self.assertEqual(linear.posted, [])
+        self.assertEqual(linear.posted, ["## Filed upstream\n\n- **Ref:** `RTP-7`"])  # no second intent
         self.assertFalse(any(args[3:4] == ["create"] for args, _ in runner.calls))
         search = next(args for args, _ in runner.calls if args[3:4] == ["search"])
         self.assertIn('summary ~ "Old title" AND created >= "2026-11-26"', search[search.index("--jql") + 1])
@@ -294,27 +327,41 @@ class FileDiscovered(unittest.TestCase):
         result = upstream.file_discovered(linear, upstream.Upstream(jira_entry(), run=runner), "ALV-9", self.NOW)
         self.assertFalse(result["assigned"])
         self.assertFalse(any(args[3:4] == ["assign"] for args, _ in runner.calls))
+        self.assertEqual(linear.posted, ["## Filed upstream\n\n- **Ref:** `RTP-7`"])
 
-    def linked(self, assignee, title="Add aria label to icon buttons"):
+    def linked(self, assignee, title="Add aria label to icon buttons", comments=None):
         log = []
         runner = fake_runner({
             "acli jira auth status": (0, f"Site: {SITE}"),
             "acli jira workitem view RTP-4": (0, json.dumps({"key": "RTP-4", "fields": {"assignee": assignee}})),
             "acli jira workitem assign": (0, ""),
         }, log)
-        linear = FakeLinear(title=title, log=log,
-                            attachments=["https://github.com/o/r/pull/3", f"https://{SITE}/browse/RTP-4"])
+        if comments is None:
+            comments = [intent("Add aria label to icon buttons", "2026-11-27T10:00:00+00:00")]
+        linear = FakeLinear(title=title, log=log, comments=comments,
+                            attachments=["https://github.com/o/r/pull/3", (f"https://{SITE}/browse/RTP-4", "RTP-4")])
         result = upstream.file_discovered(linear, upstream.Upstream(jira_entry(), run=runner), "ALV-9", self.NOW)
         return result, linear, runner, [name for _, name in log]
 
-    def test_already_linked_renames_and_assigns_when_unassigned(self):
+    def test_already_linked_and_filed_calls_nothing(self):
+        for assignee in (None, {"displayName": "teammate"}):
+            result, linear, runner, log = self.linked(
+                assignee, comments=[intent("Add aria label to icon buttons", "2026-11-27T10:00:00+00:00"),
+                                    filed("RTP-4")])
+            self.assertEqual(result, {"ref": "RTP-4", "url": f"https://{SITE}/browse/RTP-4", "reused": False,
+                                      "already_linked": True, "assigned": False, "finished": False})
+            self.assertEqual(runner.calls, [])
+            self.assertEqual((linear.posted, linear.linked, linear.updated), ([], [], []))
+
+    def test_already_linked_with_intent_but_not_filed_finishes_and_records_it(self):
         result, linear, runner, log = self.linked(None)
-        self.assertEqual(result, {"ref": "RTP-4", "url": f"https://{SITE}/browse/RTP-4",
-                                  "reused": False, "already_linked": True, "assigned": True})
+        self.assertEqual(result, {"ref": "RTP-4", "url": f"https://{SITE}/browse/RTP-4", "reused": False,
+                                  "already_linked": True, "assigned": True, "finished": True})
         self.assertEqual(linear.updated, [("ALV-9", "RTP-4: Add aria label to icon buttons", None)])
-        self.assertEqual((linear.posted, linear.linked), ([], []))
+        self.assertEqual(linear.linked, [])
+        self.assertEqual(linear.posted, ["## Filed upstream\n\n- **Ref:** `RTP-4`"])
         self.assertEqual(log, ["update", "acli jira auth status", "acli jira workitem view",
-                               "acli jira workitem assign"])
+                               "acli jira workitem assign", "comment"])
         self.assertEqual(runner.calls[-1][0][:6], ["acli", "jira", "workitem", "assign", "--key", "RTP-4"])
         self.assertFalse(any(args[3:4] in (["search"], ["create"]) for args, _ in runner.calls))
 
@@ -322,10 +369,38 @@ class FileDiscovered(unittest.TestCase):
         result, linear, runner, log = self.linked({"displayName": "teammate"}, title="RTP-4: Add labels")
         self.assertFalse(result["assigned"])
         self.assertTrue(result["already_linked"])
-        self.assertEqual((linear.posted, linear.linked, linear.updated), ([], [], []))
+        self.assertEqual((linear.linked, linear.updated), ([], []))
+        self.assertEqual(linear.posted, ["## Filed upstream\n\n- **Ref:** `RTP-4`"])
         self.assertNotIn("acli jira workitem assign", log)
         self.assertEqual(runner.calls[-1][0][:7], ["acli", "jira", "workitem", "view", "RTP-4",
                                                    "--fields", "assignee"])
+
+    def test_an_owner_attached_link_is_context_and_filing_proceeds(self):
+        runner = fake_runner({
+            "acli jira auth status": (0, f"Site: {SITE}"),
+            "acli jira workitem search": (0, "[]"),
+            "acli jira workitem create": (0, json.dumps({"key": "RTP-7"})),
+            "acli jira workitem view RTP-7": (0, json.dumps({"key": "RTP-7", "fields": {"assignee": None}})),
+            "acli jira workitem assign": (0, ""),
+        })
+        linear = FakeLinear(attachments=[(f"https://{SITE}/browse/RTP-3", "RTP-3")])
+        result = upstream.file_discovered(linear, upstream.Upstream(jira_entry(), run=runner), "ALV-9", self.NOW)
+        self.assertEqual((result["ref"], result["already_linked"], result["reused"]), ("RTP-7", False, False))
+        self.assertTrue(any(args[3:4] == ["create"] for args, _ in runner.calls))
+        self.assertFalse(any("RTP-3" in " ".join(args) for args, _ in runner.calls))
+        self.assertEqual(linear.linked, [("ALV-9", f"https://{SITE}/browse/RTP-7", "RTP-7")])
+
+    def test_a_link_is_the_factorys_only_when_its_comments_say_so(self):
+        up = upstream.Upstream(jira_entry(), run=fake_runner({}))
+        rtp3 = {"url": f"https://{SITE}/browse/RTP-3", "title": "RTP-3"}
+        rtp4 = {"url": f"https://{SITE}/browse/RTP-4", "title": f"https://{SITE}/browse/RTP-4"}
+        since = "2026-11-27T10:00:00+00:00"
+        self.assertIsNone(upstream.factory_link(up, [rtp3, rtp4], []))
+        self.assertEqual(upstream.factory_link(up, [rtp3, rtp4], [filed("RTP-4")]), ("RTP-4", rtp4["url"], True))
+        self.assertEqual(upstream.factory_link(up, [rtp4, rtp3], [intent("t", since)]),
+                         ("RTP-3", rtp3["url"], False))
+        owner = {"created_at": since, "from_factory": False, "body": "## Filed upstream\n\n- **Ref:** `RTP-3`"}
+        self.assertIsNone(upstream.factory_link(up, [rtp3], [owner]))
 
     def test_an_intent_without_its_lines_stops(self):
         linear = FakeLinear(comments=[{"created_at": self.NOW, "from_factory": True,
@@ -385,9 +460,23 @@ class GitHub(unittest.TestCase):
                                                "--add-assignee", "@me"])
         self.assertEqual(sum(1 for args, _ in runner.calls if args[:3] == ["gh", "auth", "token"]), 1)
 
+    def test_github_body_stays_markdown(self):
+        runner = self.runner(**{
+            "gh api user": (0, "me\n"),
+            "gh api repos/acme/widgets/issues": (0, "[]"),
+            "gh issue create": (0, "https://github.com/acme/widgets/issues/12\n"),
+            "gh issue edit": (0, ""),
+        })
+        linear = FakeLinear(description="## Problem\nThe `x` fails.\n\n## Factory notes\nscore")
+        result = upstream.file_discovered(linear, upstream.Upstream(GITHUB, run=runner), "ALV-9",
+                                          "2026-11-27T12:00:00Z")
+        self.assertEqual(result["ref"], "github:acme/widgets#12")
+        self.assertEqual(runner.bodies, ["## Problem\nThe `x` fails.\n\n_Found by automated analysis._"])
+
     def test_linked_github_issue_is_recognised_and_its_assignees_read(self):
         linear = FakeLinear(title="github:acme/widgets#12: Add labels",
-                            attachments=["https://github.com/acme/widgets/issues/12"])
+                            comments=[intent("Add labels", "2026-11-27T10:00:00Z")],
+                            attachments=[("https://github.com/acme/widgets/issues/12", "github:acme/widgets#12")])
         runner = self.runner(**{"gh issue view 12 --repo acme/widgets --json assignees":
                                 (0, json.dumps({"assignees": [{"login": "teammate"}]}))})
         result = upstream.file_discovered(linear, upstream.Upstream(GITHUB, run=runner), "ALV-9",
@@ -401,7 +490,8 @@ class GitHub(unittest.TestCase):
 
     def test_linked_issue_in_another_casing_is_recognised(self):
         linear = FakeLinear(title="github:acme/widgets#12: Add labels",
-                            attachments=["https://github.com/Acme/Widgets/issues/12"])
+                            comments=[intent("Add labels", "2026-11-27T10:00:00Z")],
+                            attachments=[("https://github.com/Acme/Widgets/issues/12", "github:acme/widgets#12")])
         runner = self.runner(**{"gh issue view 12": (0, json.dumps({"assignees": [{"login": "me"}]}))})
         result = upstream.file_discovered(linear, upstream.Upstream(GITHUB, run=runner), "ALV-9",
                                           "2026-11-27T12:00:00Z")
@@ -445,6 +535,24 @@ class Cli(unittest.TestCase):
                                   "--config", str(self.config)], linear=FakeLinear(), run=runner)
         self.assertEqual(code, 1)
         self.assertIn("boom", err.getvalue())
+
+    def test_cli_file_without_upstream_file_exits_2_and_search_still_runs(self):
+        entry = jira_entry(repo=str(Path(self.tmp.name) / "explore"))
+        del entry["upstream"]["file"]
+        self.config.write_text(json.dumps({"projects": [entry]}), encoding="utf-8")
+        runner = fake_runner({"acli jira auth status": (0, f"Site: {SITE}"),
+                              "acli jira workitem search": (0, "[]")})
+        linear = FakeLinear()
+        err = io.StringIO()
+        with redirect_stderr(err), redirect_stdout(io.StringIO()):
+            code = upstream.main(["file", "ALV-9", "--linear-project", "Explore Frontend",
+                                  "--config", str(self.config)], linear=linear, run=runner)
+        self.assertEqual(code, 2)
+        self.assertIn("upstream.file", err.getvalue())
+        self.assertEqual((runner.calls, linear.posted), ([], []))
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(upstream.main(["search", "--linear-project", "Explore Frontend", "--text", "x",
+                                            "--config", str(self.config)], linear=linear, run=runner), 0)
 
     def test_cli_unknown_project_exits_2(self):
         with redirect_stderr(io.StringIO()):
