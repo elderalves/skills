@@ -13,7 +13,7 @@ into <dir>/tickets.json and writes <dir>/prepare.json, which it also prints. Eac
 clean: before writing, it deletes the previous pass's candidates.json, scores/, scored.json,
 selected.json, filed.json and record/ from <dir>, and nothing else.
 
-    {"match", "linear_project", "team", "repo", "base_branch", "lens", "room", "open_backlog",
+    {"match", "linear_project", "team", "repo", "base_branch", "github_account", "lens", "room", "open_backlog",
      "max_candidates", "since", "scorer", "policy", "upstream_type", "native"}
 
 - lens: lenses[date.toordinal() % len(lenses)]; `discovery.lenses` replaces the policy's list.
@@ -263,6 +263,7 @@ def prepare(config, name, discoverer_model, day, linear, clock):
         "team": team,
         "repo": entry["repo"],
         "base_branch": entry.get("base_branch"),
+        "github_account": entry.get("github_account"),
         "lens": lens_for(day, found["lenses"]),
         "room": room(found["max_new"], found["max_open"], backlog),
         "open_backlog": backlog,

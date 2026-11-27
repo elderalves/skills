@@ -46,7 +46,11 @@ def fake_runner(responses, log=None):
 
 
 def hits(*items):
-    return 0, json.dumps([{"key": k, "fields": {"summary": s, "created": c}} for k, s, c in items])
+    """acli's answers: search prints key and summary only (it refuses `created`); view prints created."""
+    answers = {"acli jira workitem search": (0, json.dumps([{"key": k, "fields": {"summary": s}} for k, s, _ in items]))}
+    for k, _, c in items:
+        answers[f"acli jira workitem view {k} --fields created"] = (0, json.dumps({"key": k, "fields": {"created": c}}))
+    return answers
 
 
 class FakeLinear:
@@ -147,7 +151,7 @@ class Jira(unittest.TestCase):
         title = 'Add "aria" label to icon buttons'
         runner = fake_runner({
             "acli jira auth status": (0, f"  Site: {SITE}\n"),
-            "acli jira workitem search": hits(
+            **hits(
                 ("RTP-5", 'Add "aria" labels to icon buttons', "2026-11-27T16:00:00.000+0000"),
                 ("RTP-6", title, "2026-11-27T14:30:00.000+0000"),
                 ("RTP-7", title, "2026-11-27T12:30:00.000-0300"),
@@ -155,15 +159,16 @@ class Jira(unittest.TestCase):
         })
         found = upstream.Upstream(jira_entry(), run=runner).find_filed(title, "2026-11-27T12:00:00-03:00")
         self.assertEqual(found, {"ref": "RTP-7", "url": f"https://{SITE}/browse/RTP-7"})
-        args = runner.calls[-1][0]
-        jql = args[args.index("--jql") + 1]
+        search = next(a for a, _ in runner.calls if a[3:4] == ["search"])
+        jql = search[search.index("--jql") + 1]
         self.assertEqual(jql, 'project = RTP AND reporter = currentUser() '
                               'AND summary ~ "Add aria label to icon buttons" AND created >= "2026-11-26"')
-        self.assertEqual(args[args.index("--fields") + 1], "key,summary,created")
+        self.assertEqual(search[search.index("--fields") + 1], "key,summary")
+        self.assertNotIn(["acli", "jira", "workitem", "view", "RTP-5"], [a[:5] for a, _ in runner.calls])
 
     def find(self, since, *items, title="Add labels"):
         runner = fake_runner({"acli jira auth status": (0, f"Site: {SITE}"),
-                              "acli jira workitem search": hits(*items)})
+                              **hits(*items)})
         return upstream.Upstream(jira_entry(), run=runner).find_filed(title, since)
 
     def test_find_filed_compares_created_in_utc(self):
@@ -228,7 +233,7 @@ class Jira(unittest.TestCase):
         entry = jira_entry()
         del entry["upstream"]["file"]
         runner = fake_runner({"acli jira auth status": (0, f"Site: {SITE}"),
-                              "acli jira workitem search": hits(("RTP-3", "Labels", "2026-01-01"))})
+                              **hits(("RTP-3", "Labels", "2026-01-01"))})
         up = upstream.Upstream(entry, run=runner)
         self.assertEqual([t["ref"] for t in up.search_open("labels")], ["RTP-3"])
         calls = len(runner.calls)
@@ -296,7 +301,7 @@ class FileDiscovered(unittest.TestCase):
         since = "2026-11-27T10:00:00+00:00"
         runner = fake_runner({
             "acli jira auth status": (0, f"Site: {SITE}"),
-            "acli jira workitem search": hits(("RTP-7", "Old title", "2026-11-27T10:00:05.000+0000")),
+            **hits(("RTP-7", "Old title", "2026-11-27T10:00:05.000+0000")),
             "acli jira workitem view RTP-7": (0, json.dumps({"key": "RTP-7", "fields": {"assignee": None}})),
             "acli jira workitem assign": (0, ""),
         })
@@ -319,7 +324,7 @@ class FileDiscovered(unittest.TestCase):
     def test_reused_ticket_someone_holds_is_not_reassigned(self):
         runner = fake_runner({
             "acli jira auth status": (0, f"Site: {SITE}"),
-            "acli jira workitem search": hits(("RTP-7", "Old title", "2026-11-27T10:00:05.000+0000")),
+            **hits(("RTP-7", "Old title", "2026-11-27T10:00:05.000+0000")),
             "acli jira workitem view RTP-7": (0, json.dumps(
                 {"key": "RTP-7", "fields": {"assignee": {"displayName": "teammate", "accountId": "a1"}}})),
         })
@@ -513,7 +518,7 @@ class Cli(unittest.TestCase):
 
     def test_cli_search_prints_matches(self):
         runner = fake_runner({"acli jira auth status": (0, f"Site: {SITE}"),
-                              "acli jira workitem search": hits(("RTP-3", "Missing aria label", "2026-01-01"))})
+                              **hits(("RTP-3", "Missing aria label", "2026-01-01"))})
         out = io.StringIO()
         with redirect_stdout(out):
             code = upstream.main(["search", "--linear-project", "Explore Frontend", "--text", "aria label",
