@@ -83,7 +83,7 @@ The team's statuses, by exact name, and who sets each:
 
 ## Comments
 
-Every factory comment starts with the `[alves-factory]` marker, which `linear.py comment` adds. Every other comment is the owner's.
+Every factory comment starts with the `[alves-factory]` marker, which `linear.py comment` adds. Every other comment is the owner's. The sweep's comments (headed `## Sweep:`) and the filing comment (headed `## Filing upstream`) are factory comments too.
 
 **Round comment**, one per Council round:
 
@@ -120,6 +120,17 @@ or move it to **Plan Approved** to implement the current Plan as it stands.
 ```
 
 **Blocked comment**: the step that failed, the exact error, and what would unblock it.
+
+**Filing comment**, on a Discovered ticket, posted by `upstream.py file` before it searches the Upstream tracker or creates a ticket there. It is the filing intent: a restarted run looks for a ticket with exactly this title, created since this time, before it creates one, so a later retitle of the Factory ticket changes nothing. The title is a JSON string in a code span; [trackers.md](trackers.md#filing-a-discovered-ticket) has the details.
+
+```markdown
+[alves-factory]
+
+## Filing upstream
+
+- **Title:** `"<title as a JSON string>"`
+- **Since:** <ISO time>
+```
 
 **Triage comment**, on a ticket triage filed. For **work**, posted before triage moves the ticket to Ready:
 
