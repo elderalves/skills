@@ -12,8 +12,8 @@ Settled in a grilling session on 2026-11-27 (Q1–Q22), from a ChatGPT discussio
 ## Discovery pass
 
 - **Where:** T3 task F, "factory: discover", daily, one per repo (`projects.json` entry), on that repo's Trigger owner, in the repo's T3 project, new worktree from `base_branch`. New thread each run.
-- **Opt-in:** a `discovery` object on the entry. An entry with an Upstream tracker (`jira`, `github`) and no `upstream.file` cannot run Discovery: config error.
-- **No state (ADR 0006):** the Lens is `lenses[date.toordinal() % len(lenses)]`; the change set is the base branch's commits of the last 24 hours. A missed day skips that Lens.
+- **Opt-in:** a `discovery` object on the entry. An entry with an Upstream tracker (`jira`, `github`) and no `upstream.file` cannot run Discovery: config error. When several entries share a Linear project, exactly one of them may carry `discovery`.
+- **No state:** following the rule that runners keep no state between runs (ADR 0006), the Lens is `lenses[date.toordinal() % len(lenses)]`; the change set is the base branch's commits of the last 24 hours. A missed day skips that Lens.
 - **Lenses (default):** architecture, testing, performance, ux-accessibility, security, maintainability, developer-experience.
 - **Room:** `room = max(0, min(max_new, max_open - discovered tickets in Backlog))`, defaults `max_new` 3, `max_open` 10. Room 0 ends the pass before any search. Filing nothing is success.
 - **Candidates:** at most 5 (`max_candidates`), each with repo evidence (paths, lines, command output), problem, why it matters, acceptance criteria.
@@ -39,9 +39,10 @@ On a claimed Discovered ticket with no Upstream link:
 
 1. If no `## Filing upstream` factory comment exists, post one naming the exact title and the time.
 2. Search upstream for a ticket the owner reported with that comment's title, created at or after its time. If one exists, use it.
-3. Otherwise create it **unassigned**: summary = the title, body = the public part plus `_Found by automated analysis._`. Jira: `upstream.file.project_key`, `issue_type` (default `Task`), `labels` (default none). GitHub: the entry's repo.
-4. Attach the Upstream link; rename the Factory ticket `<ref>: <title>`.
+3. Otherwise create it **unassigned**: summary = the title, body = the public part plus `_Found by automated analysis._`, as plain text on Jira and as Markdown on GitHub. Jira: `upstream.file.project_key`, `issue_type` (default `Task`), `labels` (default none). GitHub: the entry's repo.
+4. Rename the Factory ticket `<ref>: <title>`, then attach the Upstream link (later stages key on the link, so it goes on only after the rename).
 5. Assign the Upstream ticket to the owner (Jira's "assigned" rule then runs triage, which finds the Factory ticket and exits).
+6. Post a `## Filed upstream` factory comment on the Factory ticket naming the Upstream ticket.
 
 No Factory URL, factory label or score goes upstream. A failure ends the run Blocked. If the owner later cancels the Factory ticket, the factory leaves the Upstream ticket alone.
 

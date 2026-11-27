@@ -10,11 +10,11 @@ and which scored candidates become Discovered tickets.
 which must carry a `discovery` object, and layers the entry's `discovery.policy` file over the
 bundled assets/default-policy.json. It reads every Factory ticket of the project (any status)
 into <dir>/tickets.json and writes <dir>/prepare.json, which it also prints. Each pass starts
-clean: before writing, it deletes the previous pass's candidates.json, scores/, selected.json,
-filed.json and record/ from <dir>, and nothing else.
+clean: before writing, it deletes the previous pass's candidates.json, scores/, scored.json,
+selected.json, filed.json and record/ from <dir>, and nothing else.
 
     {"match", "linear_project", "team", "repo", "base_branch", "lens", "room", "open_backlog",
-     "max_candidates", "since", "scorer", "policy", "upstream_type"}
+     "max_candidates", "since", "scorer", "policy", "upstream_type", "native"}
 
 - lens: lenses[date.toordinal() % len(lenses)]; `discovery.lenses` replaces the policy's list.
 - room: max(0, min(max_new, max_open - open_backlog)), where open_backlog counts the tickets in
@@ -22,6 +22,8 @@ filed.json and record/ from <dir>, and nothing else.
 - since: the date at the current local clock time, less 24 hours (ISO 8601 with offset).
 - scorer: the seat that scores every candidate: `discovery.scorer.target`, else the entry's
   resolved Council testing-risk seat. It is never the Discovery agent's own model.
+- native: the match starts with `linear-project:`. upstream_type is the entry's
+  `upstream.type`, or null when it has none.
 
 An entry with an Upstream tracker (jira, github) needs an `upstream.file` object, which may be
 `{}`: it is the owner's opt-in to filing approved Discovered tickets there. Jira's
@@ -36,8 +38,10 @@ scorer, a score file whose `title` is not its candidate's, more than max_candida
 candidates, a candidate without `closest.why_different`.
 `score` runs the same check and scores nothing until it passes. Then each candidate's Value
 score is sum(weight * score) / 10, rounded half up, its band High, Medium or Low (below Low it
-is dropped), and the best `room` of them, ties in candidate order, go to selected.json, which
-it prints. `file` files each selected item in Backlog of the Linear project, labelled
+is dropped), and the best `room` of them, ties in candidate order, go to selected.json.
+scored.json lists every candidate, best first, as {id, title, value_score, band (null below
+Low), effort, quick_win, outcome}, outcome "selected", "below the bar" or "past the room"; it
+prints {"selected": [...], "dropped": [...]}, those entries split by outcome. `file` files each selected item in Backlog of the Linear project, labelled
 `discovered` (plus `quick-win` for High with Effort S), with priority 2, 3 or 4 by band and the
 description of references/candidate-schema.md; it prints [{identifier, title, value_score,
 band, effort}]. After each create it appends {number, identifier, title} to filed.json, and a
@@ -82,7 +86,7 @@ BACKLOG = "Backlog"
 FILED_UPSTREAM = {"jira", "github"}
 SAFE_ID = re.compile(r"^[A-Za-z0-9_-]+$")
 # What one pass leaves in its work dir after prepare; the next prepare deletes exactly these.
-PASS_FILES = ("candidates.json", "selected.json", "filed.json")
+PASS_FILES = ("candidates.json", "scored.json", "selected.json", "filed.json")
 PASS_DIRS = ("scores", "record")
 
 
@@ -267,6 +271,7 @@ def prepare(config, name, discoverer_model, day, linear, clock):
         "scorer": scorer,
         "policy": policy,
         "upstream_type": (entry.get("upstream") or {}).get("type"),
+        "native": entry["match"].startswith(NATIVE),
     }, tickets
 
 
@@ -393,21 +398,33 @@ def band(score, bands):
     return None
 
 
-def select(candidates, scores_by_id, policy, room):
-    """The candidates that clear the Low band, best Value score first (ties in candidate order), at most room."""
+def rank(candidates, scores_by_id, policy, room):
+    """Every candidate scored, best Value score first (ties in candidate order), each with its
+    `outcome`: "below the bar" (no band), "selected" (the first `room` banded ones) or "past the room"."""
     weights, items = policy["weights"], []
     for candidate in candidates:
         scored = scores_by_id[candidate["id"]]
         value = value_score(scored["scores"], weights)
         found = band(value, policy["bands"])
-        if found is None:
-            continue
         items.append({**candidate, "value_score": value, "band": found, "effort": scored["effort"],
                       "quick_win": found == "High" and scored["effort"] == "S",
                       "breakdown": [{"criterion": c, "weight": weights[c], "score": scored["scores"][c],
                                      "rationale": scored["rationale"][c]} for c in CRITERIA]})
     items.sort(key=lambda item: -item["value_score"])
-    return items[:max(0, room)]
+    banded = 0
+    for item in items:
+        if item["band"] is None:
+            item["outcome"] = "below the bar"
+        else:
+            banded += 1
+            item["outcome"] = "selected" if banded <= room else "past the room"
+    return items
+
+
+def select(candidates, scores_by_id, policy, room):
+    """The candidates that clear the Low band, best Value score first (ties in candidate order), at most room."""
+    return [{k: v for k, v in item.items() if k != "outcome"}
+            for item in rank(candidates, scores_by_id, policy, room) if item["outcome"] == "selected"]
 
 
 def bullet(text):
@@ -449,18 +466,26 @@ def read_input(path):
         raise DiscoveryError(f"cannot read {path}: {error}") from error
 
 
+SCORED_FIELDS = ("id", "title", "value_score", "band", "effort", "quick_win", "outcome")
+
+
 def score_work_dir(work_dir):
-    """Return (problems, selected); selected.json is written only when there are no problems."""
+    """Return (problems, {"selected", "dropped"}); scored.json and selected.json are written only
+    when there are no problems."""
     problems = check(work_dir)
     if problems:
         return problems, None
     prepared = read_input(work_dir / "prepare.json")
     candidates = read_input(work_dir / "candidates.json")
     scores = {c["id"]: read_input(work_dir / "scores" / f"{c['id']}.json") for c in candidates}
-    selected = [{**item, "lens": prepared["lens"]}
-                for item in select(candidates, scores, prepared["policy"], prepared["room"])]
+    ranked = rank(candidates, scores, prepared["policy"], max(0, prepared["room"]))
+    selected = [{**{k: v for k, v in item.items() if k != "outcome"}, "lens": prepared["lens"]}
+                for item in ranked if item["outcome"] == "selected"]
+    scored = [{field: item[field] for field in SCORED_FIELDS} for item in ranked]
+    write_json(work_dir / "scored.json", scored)
     write_json(work_dir / "selected.json", selected)
-    return [], selected
+    return [], {"selected": [s for s in scored if s["outcome"] == "selected"],
+                "dropped": [s for s in scored if s["outcome"] != "selected"]}
 
 
 def read_filed(work_dir):
@@ -549,7 +574,7 @@ def main(argv=None, linear=None, clock=local_now):
     p.add_argument("--out", required=True, type=Path, help="the pass's work dir")
     p.add_argument("--config", default=str(factory_home() / "projects.json"))
     sub.add_parser("check", help="check candidates.json and scores/<id>.json").add_argument("work_dir", type=Path)
-    sub.add_parser("score", help="rank the scored candidates into selected.json").add_argument("work_dir", type=Path)
+    sub.add_parser("score", help="rank the scored candidates into scored.json and selected.json").add_argument("work_dir", type=Path)
     p = sub.add_parser("file", help="file selected.json as Discovered tickets in Backlog")
     p.add_argument("work_dir", type=Path)
     p.add_argument("--dry-run", action="store_true", help="write record/NN-ticket.md instead of filing")

@@ -210,6 +210,7 @@ class Prepare(unittest.TestCase):
         self.assertEqual(prepared["lens"], discovery.lens_for(date(2026, 11, 27), LENSES))
         self.assertEqual(prepared["max_candidates"], 5)
         self.assertEqual(prepared["upstream_type"], "linear")
+        self.assertIs(prepared["native"], True)
         self.assertEqual(prepared["policy"], discovery.load_policy([]))
         self.assertEqual(prepared["scorer"], council.resolve({"projects": [native("x")]},
                                                              "linear-project:Side")["testing-risk"]["target"])
@@ -235,7 +236,17 @@ class Prepare(unittest.TestCase):
         self.assertEqual(code, 0, err)
         self.assertEqual(json.loads(out)["linear_project"], "Explore")
         self.assertEqual(json.loads(out)["upstream_type"], "jira")
+        self.assertIs(json.loads(out)["native"], False)
         self.assertEqual(linear.calls, [("list_all", "Alves", "Explore")])
+
+    def test_prepare_marks_a_native_entry_without_an_upstream_key(self):
+        # Step 4 skips the upstream search on `native`, so an entry with no `upstream` cannot fail it.
+        entry = native(str(self.repo))
+        del entry["upstream"]
+        code, out, err = self.prepare(entry, FakeLinear())
+        self.assertEqual(code, 0, err)
+        self.assertIs(json.loads(out)["native"], True)
+        self.assertIsNone(json.loads(out)["upstream_type"])
 
     def test_prepare_layers_the_entry_policy(self):
         policy = self.root / "policy.json"
@@ -265,7 +276,7 @@ class Prepare(unittest.TestCase):
 
     def test_prepare_starts_each_pass_clean(self):
         self.out.mkdir()
-        for name in ("candidates.json", "selected.json", "filed.json", "notes.txt"):
+        for name in ("candidates.json", "scored.json", "selected.json", "filed.json", "notes.txt"):
             (self.out / name).write_text("[]", encoding="utf-8")
         for folder in ("scores", "record", "keep"):
             (self.out / folder).mkdir()
@@ -437,6 +448,7 @@ class Check(WorkDir):
         self.assertEqual(code, 1)
         self.assertIn("c1: ", out)
         self.assertFalse((self.dir / "selected.json").exists())
+        self.assertFalse((self.dir / "scored.json").exists())
 
 
 class Scoring(unittest.TestCase):
@@ -537,8 +549,44 @@ class Filing(WorkDir):
                  (candidate("c3", "Rename a variable"), score(S25)))
         code, out, err = self.run_cli("score", str(self.dir))
         self.assertEqual(code, 0, err)
-        self.assertEqual(json.loads(out), json.loads((self.dir / "selected.json").read_text(encoding="utf-8")))
+        selected = json.loads((self.dir / "selected.json").read_text(encoding="utf-8"))
+        self.assertEqual([s["id"] for s in json.loads(out)["selected"]], [s["id"] for s in selected])
         return self.run_cli("file", str(self.dir), *extra, linear=linear)
+
+    def test_score_writes_every_scored_candidate_with_its_outcome(self):
+        self.prepared["room"] = 2
+        self.write("prepare.json", self.prepared)
+        self.put((candidate("c38", "Tidy the logger"), score(S38)),
+                 (candidate("c92", "Test the parser"), score(S92, "S")),
+                 (candidate("c25", "Rename a variable"), score(S25, "L")),
+                 (candidate("c81", "Speed up the importer"), score(S81)))
+        code, out, err = self.run_cli("score", str(self.dir))
+        self.assertEqual(code, 0, err)
+        scored = json.loads((self.dir / "scored.json").read_text(encoding="utf-8"))
+        self.assertEqual(scored, [
+            {"id": "c92", "title": "Test the parser", "value_score": 92, "band": "High", "effort": "S",
+             "quick_win": True, "outcome": "selected"},
+            {"id": "c81", "title": "Speed up the importer", "value_score": 81, "band": "High", "effort": "M",
+             "quick_win": False, "outcome": "selected"},
+            {"id": "c38", "title": "Tidy the logger", "value_score": 38, "band": "Low", "effort": "M",
+             "quick_win": False, "outcome": "past the room"},
+            {"id": "c25", "title": "Rename a variable", "value_score": 25, "band": None, "effort": "L",
+             "quick_win": False, "outcome": "below the bar"}])
+        self.assertEqual(json.loads(out), {"selected": scored[:2], "dropped": scored[2:]})
+        selected = json.loads((self.dir / "selected.json").read_text(encoding="utf-8"))
+        self.assertEqual([s["id"] for s in selected], ["c92", "c81"])
+        self.assertEqual(selected[0]["lens"], "testing")
+        self.assertIn("breakdown", selected[0])
+
+    def test_score_with_no_room_drops_every_banded_candidate_past_the_room(self):
+        self.prepared["room"] = 0
+        self.write("prepare.json", self.prepared)
+        self.put((candidate("c92"), score(S92)), (candidate("c25"), score(S25)))
+        code, out, err = self.run_cli("score", str(self.dir))
+        self.assertEqual(code, 0, err)
+        self.assertEqual(json.loads((self.dir / "selected.json").read_text(encoding="utf-8")), [])
+        self.assertEqual([(d["id"], d["outcome"]) for d in json.loads(out)["dropped"]],
+                         [("c92", "past the room"), ("c25", "below the bar")])
 
     def test_file_sends_labels_priority_and_backlog(self):
         linear = FakeCreating()

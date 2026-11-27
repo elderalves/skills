@@ -1,6 +1,6 @@
 # Candidate and score schemas
 
-The exact shapes of the two inputs a Discovery pass writes into its work dir, beside `prepare.json`. `discovery.py check` names every way they break these rules, and `discovery.py score` scores nothing until they pass. `discovery.py prepare` starts each pass clean: it deletes `candidates.json`, `scores/`, `selected.json`, `filed.json` and `record/` from the work dir, and nothing else.
+The exact shapes of the two inputs a Discovery pass writes into its work dir, beside `prepare.json`. `discovery.py check` names every way they break these rules, and `discovery.py score` scores nothing until they pass. `discovery.py prepare` starts each pass clean: it deletes `candidates.json`, `scores/`, `scored.json`, `selected.json`, `filed.json` and `record/` from the work dir, and nothing else.
 
 ## `candidates.json`
 
@@ -69,6 +69,7 @@ Written by the scorer seat, one file per candidate.
 
 - **Value score** = Σ weight × score / 10, rounded half up; the weights are `prepare.json`'s `policy.weights` (default impact 30, engineering 25, reach 15, evidence 15, urgency 15).
 - **Band:** High at `bands.high` (70) or more, Medium at `bands.medium` (50), Low at `bands.low` (30); below Low the candidate is not filed.
-- **Selected:** the banded candidates by Value score, best first, ties in `candidates.json` order, at most `room`. Each item in `selected.json` is the candidate plus `value_score`, `band`, `effort`, `quick_win` (High and Effort `S`), `breakdown` (`[{criterion, weight, score, rationale}]`) and `lens`.
+- **Selected:** the banded candidates by Value score, best first, ties in `candidates.json` order, at most `room`. Each item in `selected.json` is the candidate plus `value_score`, `band`, `effort`, `quick_win` (High and Effort `S`), `breakdown` (`[{criterion, weight, score, rationale}]`) and `lens`. `file` reads only `selected.json`.
+- **Scored:** `scored.json` lists every candidate in the same order, as `{id, title, value_score, band, effort, quick_win, outcome}`: `band` is `null` below Low, and `outcome` is `selected`, `below the bar` (no band) or `past the room` (banded, beyond the first `room`). `score` prints these entries as `{"selected": [...], "dropped": [...]}`, split by `outcome`; the pass's reply names each dropped one from there.
 - **Filed:** in Backlog of the Linear project, label `discovered` (plus `quick-win` on a Quick win), Linear priority 2 (High), 3 (Medium) or 4 (Low), never 1 (Urgent). The description is the template in [linear-record.md](../../alves-factory-run/references/linear-record.md), **Discovered ticket**.
 - **Filed once:** after each create, `file` appends `{number, identifier, title}` (the item's position in `selected.json`, from 1) to `filed.json`, and a rerun skips every item recorded there, so a `file` that failed part-way is simply rerun. The one case a rerun can duplicate: `Linear.create` creates the issue and then reads it back, and when that read fails the ticket exists but is not in `filed.json`. Before rerunning after such an error, look in the Linear project's Backlog for the title the error was about. A `--dry-run` neither reads nor writes `filed.json`.
