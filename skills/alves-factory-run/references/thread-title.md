@@ -18,7 +18,7 @@ Rename twice:
 1. **Start**, as soon as the run knows its ticket: `<stage> <ref> …`. When a run dies, its title stays at this stage, which shows which run died.
 2. **End**, on every way the run ends, including an exit with no writes: `<stage> <ref> → <outcome>`.
 
-`<ref>` is the Upstream ref (`RTP-412`), or the Factory ticket identifier for a Native ticket. Until the run has resolved it, use the argument it was given. A dry run adds ` (dry run)` at the end.
+`<ref>` is the Upstream ref (`RTP-412`), or the Factory ticket identifier for a Native ticket. A Discovery pass has no ticket: its `<ref>` is the repo's Linear project and the day's Lens, `Gerador de Escala · testing`, with the Lens added once `discovery.py prepare` has printed it. Until the run has resolved it, use the argument it was given. A dry run adds ` (dry run)` at the end.
 
 ## Titles
 
@@ -28,6 +28,7 @@ Rename twice:
 | Implementation (`alves-factory-implement`) | `implement RTP-412 …` | `PR #57 ready`, `PR #57 draft`, `Blocked`, `skipped` |
 | Promotion (`--promote`) | `promote RTP-412 …` | `PR #57 ready`, `back to In Review`, `skipped` |
 | Triage (`alves-factory-triage`) | `triage RTP-412 …` | `Work`, `Unsure`, `Not work`, `skipped` (a Factory ticket already exists), `failed` |
+| Discovery (`alves-factory-discover`) | `discover Gerador de Escala · testing …` | `filed 2`, `quiet` (nothing filed), `backlog full` (no room in Backlog), `failed` |
 
 The **sweep** runs in one thread per prefix, so its title shows the latest pass and its start time (the runner's local time, 24-hour clock):
 
