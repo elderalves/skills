@@ -11,8 +11,10 @@ match by prefix). Several entries may share one prefix when one Upstream tracker
 repos; each then names a distinct `linear_project`, and --linear-project picks among them (the
 Factory ticket's Linear project, once triage has filed it). --ref alone refuses to guess
 between shared entries. --candidates prints every entry of the prefix, for triage to choose
-from. --linear-project alone finds the Native entry `linear-project:<name>`. --match finds
-the one entry with exactly that `match`.
+from. --linear-project alone finds the Native entry `linear-project:<name>`, or, when there is
+none, the one prefix entry whose `linear_project` is that name (a Discovered ticket, which has no
+Upstream ref yet, finds its repo this way); two such entries are an error. --match finds the
+one entry with exactly that `match`.
 
 Prints the entry (a list of entries for --candidates) as JSON with `repo` absolute: a leading
 `~/` becomes this machine's home directory, so one projects.json serves Windows, Linux and
@@ -129,6 +131,13 @@ def find(config, ref=None, linear_project=None, match=None):
         what = f"upstream ref {ref!r}"
     else:
         found = [e for e in entries(config) if e["match"] == NATIVE + linear_project]
+        if not found:
+            found = [e for e in entries(config) if not e["match"].startswith(NATIVE)
+                     and same_name(e.get("linear_project"), linear_project)]
+            if len(found) > 1:
+                raise ProjectError(f"{len(found)} entries file tickets in Linear project {linear_project}; "
+                                   f"their matches are {[e['match'] for e in found]}, so pass --ref too, "
+                                   "or give each entry its own linear_project")
         what = f"Linear project {linear_project!r}"
     if not found:
         raise ProjectError(f"no projects.json entry matches {what}")
@@ -139,7 +148,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description="Find the projects.json entry for a factory run.")
     parser.add_argument("--ref", help="an upstream ref, such as PCS-6137 or github:owner/repo#12")
     parser.add_argument("--linear-project",
-                        help="with --ref, the Factory ticket's Linear project; alone, a Native ticket's")
+                        help="with --ref, the Factory ticket's Linear project; alone, the Native entry "
+                             "of that name, else the one prefix entry filing tickets there")
     parser.add_argument("--candidates", action="store_true", help="with --ref, every entry triage chooses among")
     parser.add_argument("--match", help="an entry's exact match value")
     parser.add_argument("--config", default=str(factory_home() / "projects.json"))
