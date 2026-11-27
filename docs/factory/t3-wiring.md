@@ -128,8 +128,9 @@ A sweep restarts a dead run by moving its ticket back to Ready or Plan Approved,
 
 | Field | Value |
 |---|---|
-| Schedule | Daily (`everyMs: 86400000`, or the daily schedule T3 offers) |
+| Schedule | Fixed time, every day (`{"type": "fixed_time", "timeOfDay": "06:00"}`) |
 | Destination | New thread each run, in the repo's T3 project, with a new worktree from `<base_branch>` |
+| Model | Claude Opus 5.5, High, set on the task: never the project's default when that is the scorer's model (AgileKit's project default is Muse Spark, its testing-risk seat) |
 
 Prompt, naming the entry's Linear project (its `linear_project`, or for a Native entry the name after `linear-project:`):
 
@@ -138,7 +139,7 @@ Use the alves-factory-discover skill on Linear project Metronome.
 A schedule started this run. Never ask questions: finish with the skill's final reply.
 ```
 
-A pass files at most a few Discovered tickets in Backlog and writes nothing else; it needs no webhook. The owner approves one by moving it to **Ready**, which starts Task A: the planning run files its Upstream ticket first (an entry with an Upstream tracker needs `upstream.file`, [factory config](../../skills/alves-factory-run/references/config.md#discovery)), then plans it. The Discovery agent runs on the task's model, so the scorer's seat must be another model.
+A pass files at most a few Discovered tickets in Backlog and writes nothing else; it needs no webhook. The owner approves one by moving it to **Ready**, which starts Task A: the planning run files its Upstream ticket first (an entry with an Upstream tracker needs `upstream.file`, [factory config](../../skills/alves-factory-run/references/config.md#discovery)), then plans it. The Discovery agent runs on the task's model, so the scorer's seat must be another model. A task created through `schedule_task` can set neither the model nor the worktree: create it paused, set both in T3's task editor, then enable it.
 
 ## Thread titles
 
