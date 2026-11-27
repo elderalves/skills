@@ -5,7 +5,9 @@ LINEAR_ALVES_API_KEY=... line in the factory home's .env (factory_home.py). Ever
 
     python linear.py find-by-url <upstream-url>
     python linear.py get <issue>
-    python linear.py create --team <name> --title <t> --upstream-url <u> [--upstream-title <t>] [--state <s>] [--project <name>] [--description-file <f>]
+    python linear.py create --team <name> --title <t> [--upstream-url <u>] [--upstream-title <t>] [--state <s>] [--project <name>] [--description-file <f>] [--label <l> ...] [--priority <0-4>]
+    python linear.py link <issue> --url <u> --title <t>
+    python linear.py update <issue> [--title <t>] [--description-file <f>]
     python linear.py set-state <issue> <state-name>
     python linear.py set-label <issue> <label>          # replaces any label sharing the prefix before ':'
     python linear.py put-doc <issue> --title <t> --file <f>   # creates, or updates the doc with that title
@@ -13,6 +15,7 @@ LINEAR_ALVES_API_KEY=... line in the factory home's .env (factory_home.py). Ever
     python linear.py comment <issue> --file <f>
     python linear.py comments <issue> [--since <iso-datetime>]
     python linear.py list --team <name> --project <name> --state <s> [--state <s> ...]
+    python linear.py list-all --team <name> --project <name>
     python linear.py mark-duplicate <issue> --of <original-issue>
 
 <issue> is an identifier such as ALV-12 or an issue UUID. Exit 1 on any API error.
@@ -34,7 +37,7 @@ KEY_NAME = "LINEAR_ALVES_API_KEY"
 ENV_FILE = factory_home() / ".env"
 
 ISSUE_FIELDS = """
-  id identifier title description url createdAt
+  id identifier title description url createdAt priority
   project { id name }
   parent { identifier title description }
   state { id name type }
@@ -182,6 +185,40 @@ class Linear:
             })
         return result
 
+    def list_all(self, team, project):
+        """Every issue of the project in any status, oldest first, with its labels and comments.
+
+        Each issue carries id, identifier, url, title, description, state, labels (names),
+        priority, attachment_urls and comments ({created_at, author, from_factory, body}, oldest first).
+        """
+        data = self.gql(
+            "query($team: ID!, $project: String!) { issues(first: 250, filter: "
+            "{ team: { id: { eq: $team } }, project: { name: { eqIgnoreCase: $project } } }) "
+            "{ nodes { id identifier url createdAt title description priority state { name } "
+            "labels { nodes { name } } attachments { nodes { url title } } "
+            "comments(first: 250) { nodes { createdAt body user { name } } } } } }",
+            {"team": self.team_id(team), "project": project},
+        )
+        result = []
+        for node in sorted(data["issues"]["nodes"], key=lambda n: n["createdAt"]):
+            comments = sorted(node["comments"]["nodes"], key=lambda c: c["createdAt"])
+            result.append({
+                "id": node["id"],
+                "identifier": node["identifier"],
+                "url": node["url"],
+                "title": node["title"],
+                "description": node.get("description"),
+                "state": node["state"]["name"],
+                "labels": [l["name"] for l in node["labels"]["nodes"]],
+                "priority": node.get("priority"),
+                "attachment_urls": [a["url"] for a in node["attachments"]["nodes"]],
+                "comments": [{"created_at": c["createdAt"],
+                              "author": (c.get("user") or {}).get("name"),
+                              "from_factory": c["body"].lstrip().startswith(MARKER),
+                              "body": c["body"]} for c in comments],
+            })
+        return result
+
     # Writes
 
     def project_id(self, name):
@@ -193,7 +230,9 @@ class Linear:
             raise LinearError(f"no Linear project named {name!r}")
         return projects[0]["id"]
 
-    def create(self, team, title, upstream_url, upstream_title=None, state=None, description=None, project=None):
+    def create(self, team, title, upstream_url=None, upstream_title=None, state=None, description=None,
+               project=None, labels=(), priority=None):
+        """File an issue; it is linked to upstream_url only when one is given."""
         team_id = self.team_id(team)
         payload = {"teamId": team_id, "title": title}
         if project:
@@ -202,16 +241,38 @@ class Linear:
             payload["description"] = description
         if state:
             payload["stateId"] = self.state_id(team_id, state)
+        if labels:
+            payload["labelIds"] = [self.label_id(team_id, name) for name in labels]
+        if priority is not None:
+            payload["priority"] = priority
         created = self.gql(
             "mutation($input: IssueCreateInput!) { issueCreate(input: $input) { success issue { id identifier } } }",
             {"input": payload},
         )["issueCreate"]["issue"]
+        if upstream_url:
+            self.attach(created["id"], upstream_url, upstream_title or upstream_url)
+        return self.issue(created["id"])
+
+    def attach(self, issue_id, url, title):
         self.gql(
             "mutation($issue: String!, $url: String!, $title: String) "
             "{ attachmentLinkURL(issueId: $issue, url: $url, title: $title) { success } }",
-            {"issue": created["id"], "url": upstream_url, "title": upstream_title or upstream_url},
+            {"issue": issue_id, "url": url, "title": title},
         )
-        return self.issue(created["id"])
+
+    def link(self, ref, url, title):
+        issue = self.issue(ref)
+        self.attach(issue["id"], url, title)
+        return self.issue(issue["id"])
+
+    def update(self, ref, title=None, description=None):
+        """Set the title and/or description, leaving every other field as it is."""
+        issue = self.issue(ref)
+        payload = {k: v for k, v in (("title", title), ("description", description)) if v is not None}
+        if payload:
+            self.gql("mutation($id: String!, $input: IssueUpdateInput!) { issueUpdate(id: $id, input: $input) "
+                     "{ success } }", {"id": issue["id"], "input": payload})
+        return self.issue(issue["id"])
 
     def set_state(self, ref, name):
         issue = self.issue(ref)
@@ -301,10 +362,20 @@ def main(argv=None, linear=None):
     p = sub.add_parser("create")
     p.add_argument("--team", required=True)
     p.add_argument("--title", required=True)
-    p.add_argument("--upstream-url", required=True)
+    p.add_argument("--upstream-url")
     p.add_argument("--upstream-title")
     p.add_argument("--state")
     p.add_argument("--project", help="the Linear project to file the ticket in")
+    p.add_argument("--description-file", type=Path)
+    p.add_argument("--label", action="append", default=[], dest="labels")
+    p.add_argument("--priority", type=int, choices=range(5))
+    p = sub.add_parser("link")
+    p.add_argument("issue")
+    p.add_argument("--url", required=True)
+    p.add_argument("--title", required=True)
+    p = sub.add_parser("update")
+    p.add_argument("issue")
+    p.add_argument("--title")
     p.add_argument("--description-file", type=Path)
     p = sub.add_parser("set-state")
     p.add_argument("issue")
@@ -330,6 +401,9 @@ def main(argv=None, linear=None):
     p.add_argument("--team", required=True)
     p.add_argument("--project", required=True)
     p.add_argument("--state", action="append", required=True, dest="states")
+    p = sub.add_parser("list-all")
+    p.add_argument("--team", required=True)
+    p.add_argument("--project", required=True)
     p = sub.add_parser("mark-duplicate")
     p.add_argument("issue")
     p.add_argument("--of", required=True, dest="original")
@@ -345,7 +419,12 @@ def main(argv=None, linear=None):
         elif args.command == "create":
             description = read(args.description_file) if args.description_file else None
             result = linear.create(args.team, args.title, args.upstream_url, args.upstream_title,
-                                   args.state, description, args.project)
+                                   args.state, description, args.project, args.labels, args.priority)
+        elif args.command == "link":
+            result = linear.link(args.issue, args.url, args.title)
+        elif args.command == "update":
+            description = read(args.description_file) if args.description_file else None
+            result = linear.update(args.issue, args.title, description)
         elif args.command == "set-state":
             result = linear.set_state(args.issue, args.state)
         elif args.command == "set-label":
@@ -363,6 +442,8 @@ def main(argv=None, linear=None):
             result = linear.comments(args.issue, args.since)
         elif args.command == "list":
             result = linear.list_issues(args.team, args.project, args.states)
+        elif args.command == "list-all":
+            result = linear.list_all(args.team, args.project)
         else:
             result = linear.mark_duplicate(args.issue, args.original)
     except (LinearError, OSError) as error:

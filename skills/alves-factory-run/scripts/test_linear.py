@@ -63,6 +63,63 @@ class LinearTests(unittest.TestCase):
             Linear(fake).create("Alves", "t", "https://x/browse/DXPX-1", project="Nope")
         self.assertEqual(fake.called("issueCreate"), [])
 
+    def labels_fake(self):
+        fake = self.create_fake([{"id": "p1", "name": "Explore"}])
+        fake.answers = {"issueLabels(": lambda v: {"issueLabels": {"nodes": [
+            {"id": f"l-{v['name']}", "name": v["name"], "team": None}]}},
+            "workflowStates": {"workflowStates": {"nodes": [{"id": "s-backlog", "name": "Backlog"}]}},
+            **fake.answers}
+        return fake
+
+    def test_create_without_upstream_url_attaches_nothing(self):
+        fake = self.labels_fake()
+        Linear(fake).create("Alves", "Add labels", state="Backlog", project="Explore")
+        self.assertEqual(fake.called("attachmentLinkURL"), [])
+        self.assertEqual(len(fake.called("issueCreate")), 1)
+
+    def test_create_sends_labels_and_priority(self):
+        fake = self.labels_fake()
+        Linear(fake).create("Alves", "Add labels", labels=("discovered", "quick-win"), priority=2)
+        payload = fake.called("issueCreate")[0]["input"]
+        self.assertEqual(payload["labelIds"], ["l-discovered", "l-quick-win"])
+        self.assertEqual(payload["priority"], 2)
+
+    def test_list_all_has_no_state_filter_and_keeps_canceled(self):
+        node = {
+            "id": "i1", "identifier": "ALV-20", "url": "u", "createdAt": "2026-01-01T00:00:00Z",
+            "title": "Add labels", "description": "d", "priority": 3, "state": {"name": "Canceled"},
+            "labels": {"nodes": [{"name": "discovered"}]},
+            "attachments": {"nodes": []},
+            "comments": {"nodes": [{"createdAt": "2026-01-02T00:00:00Z", "body": "not now",
+                                    "user": {"name": "Owner"}}]},
+        }
+        fake = Fake({"teams(": {"teams": {"nodes": [{"id": "team1", "name": "Alves"}]}},
+                     "issues(": {"issues": {"nodes": [node]}}})
+        [found] = Linear(fake).list_all("Alves", "Explore")
+        self.assertNotIn("state: { name", fake.calls[-1][0])
+        self.assertEqual((found["state"], found["labels"]), ("Canceled", ["discovered"]))
+        self.assertIs(found["comments"][0]["from_factory"], False)
+        self.assertEqual(found["comments"][0]["author"], "Owner")
+
+    def test_link_attaches_url_with_title(self):
+        fake = Fake({"attachmentLinkURL": {"attachmentLinkURL": {"success": True}},
+                     "issue(id": {"issue": issue(id="i9", identifier="ALV-9")}})
+        Linear(fake).link("ALV-9", "https://x.atlassian.net/browse/RTP-1", "RTP-1")
+        sent = fake.called("attachmentLinkURL")[0]
+        self.assertEqual((sent["issue"], sent["url"], sent["title"]),
+                         ("i9", "https://x.atlassian.net/browse/RTP-1", "RTP-1"))
+
+    def test_update_sets_only_given_fields(self):
+        fake = Fake({"issueUpdate": {"issueUpdate": {"success": True}},
+                     "issue(id": {"issue": issue(id="i9", identifier="ALV-9")}})
+        Linear(fake).update("ALV-9", title="RTP-1: Add labels")
+        self.assertEqual(fake.called("issueUpdate")[0]["input"], {"title": "RTP-1: Add labels"})
+
+    def test_cli_create_without_upstream_url(self):
+        fake_linear = Linear(self.labels_fake())
+        argv = ["create", "--team", "Alves", "--title", "t", "--label", "discovered", "--priority", "3"]
+        self.assertEqual(linear_mod.main(argv, linear=fake_linear), 0)
+
     def test_set_label_replaces_same_prefix_only(self):
         fake = Fake({
             "issueLabels(": {"issueLabels": {"nodes": [{"id": "new", "name": "gate:implement", "team": None}]}},
