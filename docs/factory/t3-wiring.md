@@ -10,6 +10,7 @@ Factory runs start from T3 Code **scheduled tasks**. Tasks A to D have an **On w
 | D: "factory: promote" | Linear: ticket moves from **In Review** to **Team Review** | `alves-factory-implement --promote` | every project |
 | E: "factory: sweep" | every 30 minutes | `alves-factory-sweep` | every project |
 | F: "factory: discover" | daily | `alves-factory-discover` | every project whose entry has a `discovery` object |
+| G: "factory: design" | Linear: ticket enters **Ready for Design** | `alves-factory-design-explore` | every project whose entry has a `design` object |
 
 A, B, D and F belong to one repo: each repo's T3 project gets its own, A, B and D filtered by that repo's Linear project and F naming it in its prompt. C and E belong to an Upstream prefix (`PCS-`, `RTP-`), whichever repos it feeds ([ADR 0007](adr/0007-triage-chooses-the-repo.md)): they only read repos and write Linear, so they live in one T3 project named `alves-factory`, rooted at `~/.alves-factory/`, with no worktree. A Native project (no Upstream tracker) has no C, and its E names its `linear-project:` entry.
 
@@ -55,6 +56,8 @@ finish with the skill's final reply.
 ```
 
 Task B prompt: the same, naming `alves-factory-implement`. Task D prompt: the same, naming `alves-factory-implement` with `--promote` after the identifier.
+
+**Task G** is wired like Task A, with `body.data.stateId` set to Ready for Design's id and a prompt naming `alves-factory-design-explore`. Its thread runs in the repo's T3 project with a worktree, like A, so the repo's local-scope Figma MCP server (`design.figma_server`) is available to the run and its Variation agents. Not wired yet: it needs its own Linear webhook and signing secret.
 
 Each task needs its own Linear webhook (Linear → Settings → API → Webhooks → New webhook): URL = the task's webhook URL from the T3 task editor (a public URL needs a T3 Connect tunnel), resource type **Issues**, team **Alves**; copy that webhook's **signing secret** into the task.
 
@@ -155,6 +158,12 @@ Look them up with `linear.py` (or the Linear API) when adding a project.
 | Status **Plan Approved** | `1a0c164a-d9d5-430f-b399-731d770fcddd` |
 | Status **In Review** | `89543c4b-7f58-4ad7-9037-888a8bdef129` |
 | Status **Team Review** | not created yet: add it to the Alves team after In Review, then record its id here |
+| Status **Ready for Design** | `21c7c4af-1f1a-40d9-b435-1bcb473246f8` |
+| Status **Exploring** | `37ee8973-066d-49d0-88a5-ac1a1556cf11` |
+| Status **Awaiting Selection** | `e761ccd7-9f50-417d-831f-c894bf53707f` |
+| Status **Refining** | `16a8a887-64d7-4c64-9755-db478fa803b7` |
+| Status **Awaiting Design Approval** | `6fb03409-963c-48c4-9fa0-3cf57c2c2240` |
+| Status **Design Done** | `ba8c5fb6-2ba0-4a2a-b0fe-451a15a59824` |
 | Project **Gerador de Escala** | `d585a739-05e9-4949-ba4b-aeb4274c31e0` |
 | Project **Metronome** | `bf16f71d-7545-4fad-a283-5d123a06ada2` |
 | Project **AgileKit** | `8f981427-92e8-4218-ab04-dcca8be7a0ed` |

@@ -17,6 +17,9 @@ LINEAR_ALVES_API_KEY=... line in the factory home's .env (factory_home.py). Ever
     python linear.py list --team <name> --project <name> --state <s> [--state <s> ...]
     python linear.py list-all --team <name> --project <name>
     python linear.py mark-duplicate <issue> --of <original-issue>
+    python linear.py upload <file>                      # uploads to Linear, reads it back, prints its asset_url
+    python linear.py states --team <name>               # the team's workflow statuses, in board order
+    python linear.py ensure-states --team <name> --file <states.json>   # creates only the statuses it lacks
 
 <issue> is an identifier such as ALV-12 or an issue UUID. Exit 1 on any API error.
 """
@@ -33,6 +36,9 @@ from factory_home import factory_home
 
 API_URL = "https://api.linear.app/graphql"
 MARKER = "[alves-factory]"
+STATE_TYPES = {"triage", "backlog", "unstarted", "started", "completed", "canceled", "duplicate"}
+CONTENT_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",
+                 ".webp": "image/webp", ".json": "application/json", ".md": "text/markdown"}
 KEY_NAME = "LINEAR_ALVES_API_KEY"
 ENV_FILE = factory_home() / ".env"
 
@@ -86,9 +92,25 @@ def http_transport(query, variables):
     return payload["data"]
 
 
+def http_request(method, url, data=None, headers=None):
+    """(status, body) of one plain HTTP request; an HTTP error returns its status instead of raising."""
+    request = urllib.request.Request(url, data=data, headers=headers or {}, method=method)
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            return response.status, response.read()
+    except urllib.error.HTTPError as error:
+        body = error.read()
+        error.close()
+        return error.code, body
+    except urllib.error.URLError as error:
+        raise LinearError(f"cannot reach {url.split('?')[0]}: {error.reason}") from error
+
+
 class Linear:
-    def __init__(self, transport=http_transport):
+    def __init__(self, transport=http_transport, request=http_request, key=None):
         self.gql = transport
+        self.request = request
+        self.key = key or api_key
 
     # Reads
 
@@ -356,6 +378,78 @@ class Linear:
             {"input": {"issueId": issue["id"], "body": body}},
         )["commentCreate"]["comment"]
 
+    def upload(self, path):
+        """Upload a file to Linear's storage, read it back, and return its asset URL for Markdown."""
+        path = Path(path)
+        data = path.read_bytes()
+        content_type = CONTENT_TYPES.get(path.suffix.lower(), "application/octet-stream")
+        target = self.gql(
+            "mutation($type: String!, $name: String!, $size: Int!) { fileUpload(contentType: $type, "
+            "filename: $name, size: $size) { success uploadFile { uploadUrl assetUrl headers { key value } } } }",
+            {"type": content_type, "name": path.name, "size": len(data)},
+        )["fileUpload"]["uploadFile"]
+        headers = {h["key"]: h["value"] for h in target.get("headers") or []}
+        headers.update({"Content-Type": content_type, "Cache-Control": "public, max-age=31536000"})
+        status, _ = self.request("PUT", target["uploadUrl"], data, headers)
+        if not 200 <= status < 300:
+            raise LinearError(f"uploading {path.name} failed with HTTP {status}")
+        status, body = self.request("GET", target["assetUrl"], None, {"Authorization": self.key()})
+        if status != 200 or len(body) != len(data):
+            raise LinearError(f"{path.name} did not read back from Linear (HTTP {status}, "
+                              f"{len(body)} of {len(data)} bytes)")
+        return {"asset_url": target["assetUrl"], "filename": path.name, "size": len(data), "verified": True}
+
+    def states(self, team):
+        """The team's workflow statuses in board order."""
+        data = self.gql(
+            "query($team: ID!) { workflowStates(first: 100, filter: { team: { id: { eq: $team } } }) "
+            "{ nodes { id name type color position description } } }",
+            {"team": self.team_id(team)},
+        )
+        return sorted(data["workflowStates"]["nodes"], key=lambda s: s["position"])
+
+    def ensure_states(self, team, wanted):
+        """Create each wanted status the team lacks; never rename, retype or delete one it has.
+
+        wanted: [{name, type, color?, description?, after?}]. A status is matched by name,
+        ignoring case. `after` names the status it is placed behind on the board (an existing
+        one, or one created earlier in this list); without it Linear places it.
+        """
+        for spec in wanted:
+            if not isinstance(spec, dict) or not isinstance(spec.get("name"), str) or spec.get("type") not in STATE_TYPES:
+                raise LinearError(f"each status needs a name and a type in {sorted(STATE_TYPES)}: {spec!r}")
+        team_id = self.team_id(team)
+        board = self.states(team)
+        named = lambda name: next((s for s in board if s["name"].casefold() == name.casefold()), None)
+        for spec in wanted:
+            if spec.get("after") and named(spec["after"]) is None and not any(
+                    w["name"].casefold() == spec["after"].casefold() for w in wanted):
+                raise LinearError(f"status {spec['name']!r} goes after {spec['after']!r}, which the team does not have")
+        result = []
+        for spec in wanted:
+            found = named(spec["name"])
+            if found:
+                result.append({"name": found["name"], "id": found["id"], "type": found["type"], "created": False,
+                               "type_matches": found["type"] == spec["type"]})
+                continue
+            payload = {"teamId": team_id, "name": spec["name"], "type": spec["type"],
+                       "color": spec.get("color", "#95a2b3")}
+            if spec.get("description"):
+                payload["description"] = spec["description"]
+            after = named(spec["after"]) if spec.get("after") else None
+            if after:
+                later = [s["position"] for s in board if s["position"] > after["position"]]
+                payload["position"] = (after["position"] + min(later)) / 2 if later else after["position"] + 1
+            created = self.gql(
+                "mutation($input: WorkflowStateCreateInput!) { workflowStateCreate(input: $input) "
+                "{ success workflowState { id name type color position } } }",
+                {"input": payload},
+            )["workflowStateCreate"]["workflowState"]
+            board = sorted(board + [created], key=lambda s: s["position"])
+            result.append({"name": created["name"], "id": created["id"], "type": created["type"], "created": True,
+                           "type_matches": True})
+        return result
+
     def mark_duplicate(self, ref, original):
         issue, keep = self.issue(ref), self.issue(original)
         self.gql(
@@ -418,6 +512,11 @@ def main(argv=None, linear=None):
     p = sub.add_parser("mark-duplicate")
     p.add_argument("issue")
     p.add_argument("--of", required=True, dest="original")
+    sub.add_parser("upload").add_argument("file", type=Path)
+    sub.add_parser("states").add_argument("--team", required=True)
+    p = sub.add_parser("ensure-states")
+    p.add_argument("--team", required=True)
+    p.add_argument("--file", type=Path, required=True)
     args = parser.parse_args(argv)
 
     linear = linear or Linear()
@@ -455,9 +554,15 @@ def main(argv=None, linear=None):
             result = linear.list_issues(args.team, args.project, args.states)
         elif args.command == "list-all":
             result = linear.list_all(args.team, args.project)
+        elif args.command == "upload":
+            result = linear.upload(args.file)
+        elif args.command == "states":
+            result = linear.states(args.team)
+        elif args.command == "ensure-states":
+            result = linear.ensure_states(args.team, json.loads(read(args.file).lstrip("\ufeff")))
         else:
             result = linear.mark_duplicate(args.issue, args.original)
-    except (LinearError, OSError) as error:
+    except (LinearError, OSError, ValueError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
     print(json.dumps(result, indent=2))

@@ -270,5 +270,95 @@ class LinearTests(unittest.TestCase):
         self.assertEqual(linear_mod.main(["get", "ALV-1"], linear=Linear(boom)), 1)
 
 
+
+class UploadTests(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.TemporaryDirectory()
+        self.png = Path(self.tmp.name) / "B-desktop.png"
+        self.png.write_bytes(b"\x89PNG fake bytes")
+        self.fake = Fake({"fileUpload": {"fileUpload": {"success": True, "uploadFile": {
+            "uploadUrl": "https://storage.example/put?sig=1", "assetUrl": "https://uploads.linear.app/a/b/B-desktop.png",
+            "headers": [{"key": "x-goog-meta", "value": "m"}]}}}})
+        self.requests = []
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def http(self, get_status=200, get_body=None, put_status=200):
+        def request(method, url, data=None, headers=None):
+            self.requests.append((method, url, headers))
+            if method == "PUT":
+                return put_status, b""
+            return get_status, self.png.read_bytes() if get_body is None else get_body
+        return request
+
+    def test_upload_puts_the_bytes_with_linears_headers_and_reads_them_back(self):
+        result = Linear(self.fake, self.http(), key=lambda: "k").upload(self.png)
+        self.assertEqual(result["asset_url"], "https://uploads.linear.app/a/b/B-desktop.png")
+        self.assertTrue(result["verified"])
+        self.assertEqual(self.fake.called("fileUpload")[0], {"type": "image/png", "name": "B-desktop.png", "size": len(self.png.read_bytes())})
+        put, get = self.requests
+        self.assertEqual((put[0], put[2]["x-goog-meta"], put[2]["Content-Type"]), ("PUT", "m", "image/png"))
+        self.assertEqual((get[0], get[2]["Authorization"]), ("GET", "k"))
+
+    def test_a_failed_put_raises(self):
+        with self.assertRaisesRegex(LinearError, "HTTP 403"):
+            Linear(self.fake, self.http(put_status=403), key=lambda: "k").upload(self.png)
+
+    def test_a_short_read_back_raises(self):
+        with self.assertRaisesRegex(LinearError, "did not read back"):
+            Linear(self.fake, self.http(get_body=b"partial"), key=lambda: "k").upload(self.png)
+
+
+class StateTests(unittest.TestCase):
+    BOARD = [{"id": "s1", "name": "Ready", "type": "unstarted", "color": "c", "position": 1.0, "description": None},
+             {"id": "s2", "name": "Planning", "type": "started", "color": "c", "position": 2.0, "description": None},
+             {"id": "s3", "name": "Done", "type": "completed", "color": "c", "position": 9.0, "description": None}]
+
+    def fake(self):
+        created = iter(range(100))
+        return Fake({
+            "teams(": {"teams": {"nodes": [{"id": "team1", "name": "Alves"}]}},
+            "workflowStateCreate": lambda v: {"workflowStateCreate": {"success": True, "workflowState": {
+                "id": f"new{next(created)}", "name": v["input"]["name"], "type": v["input"]["type"],
+                "color": v["input"]["color"], "position": v["input"].get("position", 50.0)}}},
+            "workflowStates(": {"workflowStates": {"nodes": list(reversed(self.BOARD))}},
+        })
+
+    def test_states_come_in_board_order(self):
+        self.assertEqual([s["name"] for s in Linear(self.fake()).states("Alves")], ["Ready", "Planning", "Done"])
+
+    def test_creates_only_missing_statuses_and_keeps_existing_ones(self):
+        fake = self.fake()
+        result = Linear(fake).ensure_states("Alves", [
+            {"name": "ready", "type": "unstarted"},
+            {"name": "Ready for Design", "type": "unstarted", "after": "Ready", "description": "trigger"},
+            {"name": "Exploring", "type": "started", "after": "Ready for Design"},
+        ])
+        self.assertEqual([(r["name"], r["created"]) for r in result],
+                         [("Ready", False), ("Ready for Design", True), ("Exploring", True)])
+        first, second = [v["input"] for v in fake.called("workflowStateCreate")]
+        self.assertEqual((first["position"], first["description"], first["teamId"]), (1.5, "trigger", "team1"))
+        self.assertEqual(second["position"], 1.75)
+        self.assertFalse(any("Update" in q or "Archive" in q or "Delete" in q for q, _ in fake.calls))
+
+    def test_a_type_mismatch_is_reported_not_changed(self):
+        [result] = Linear(self.fake()).ensure_states("Alves", [{"name": "Planning", "type": "unstarted"}])
+        self.assertEqual((result["created"], result["type_matches"]), (False, False))
+
+    def test_an_unknown_after_status_writes_nothing(self):
+        fake = self.fake()
+        with self.assertRaisesRegex(LinearError, "does not have"):
+            Linear(fake).ensure_states("Alves", [{"name": "Exploring", "type": "started", "after": "Nope"}])
+        self.assertEqual(fake.called("workflowStateCreate"), [])
+
+    def test_a_bad_type_writes_nothing(self):
+        fake = self.fake()
+        with self.assertRaises(LinearError):
+            Linear(fake).ensure_states("Alves", [{"name": "Exploring", "type": "doing"}])
+        self.assertEqual(fake.calls, [])
+
+
 if __name__ == "__main__":
     unittest.main()

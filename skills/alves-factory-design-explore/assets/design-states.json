@@ -1,0 +1,44 @@
+[
+  {
+    "name": "Ready for Design",
+    "type": "unstarted",
+    "color": "#5e6ad2",
+    "after": "Ready",
+    "description": "Trigger: start (or restart) an Exploration run. Set by the owner."
+  },
+  {
+    "name": "Exploring",
+    "type": "started",
+    "color": "#f2c94c",
+    "after": "Ready for Design",
+    "description": "An Exploration run owns the ticket: brief, Variations, design Council, Selection comment."
+  },
+  {
+    "name": "Awaiting Selection",
+    "type": "started",
+    "color": "#f2994a",
+    "after": "Exploring",
+    "description": "Waiting on the owner's Selection comment, then Refining, Ready for Design or Canceled."
+  },
+  {
+    "name": "Refining",
+    "type": "started",
+    "color": "#f2c94c",
+    "after": "Awaiting Selection",
+    "description": "Trigger and running status: a Refinement run owns the selected design."
+  },
+  {
+    "name": "Awaiting Design Approval",
+    "type": "started",
+    "color": "#f2994a",
+    "after": "Refining",
+    "description": "Waiting on the owner's Design approval: Ready to plan from the handoff, or Design Done."
+  },
+  {
+    "name": "Design Done",
+    "type": "completed",
+    "color": "#4cb782",
+    "after": "Done",
+    "description": "Design approved; the Design handoff is complete and planning can start from it later."
+  }
+]

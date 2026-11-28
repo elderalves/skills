@@ -29,6 +29,7 @@ Maps an Upstream ticket to the project the factory works in. Example: [projects.
 - `linear_team`: the Factory tracker team whose statuses match [linear-record.md](linear-record.md).
 - `council`: optional shared Council seats for every project. See **Council targets** below.
 - `councils`: optional named Councils that project entries refer to by name. See **Council targets** below.
+- `design_council`, `design_councils`: the same for the design Council. See **Design** below.
 - `projects`: tried in order; the first whose `match` is a prefix of the Upstream reference selects that prefix. Several entries may share one `match` when one Upstream tracker feeds several repos (a Jira project covering several apps): see **One prefix, several repos** below.
   - `match`: a Jira key prefix (`PROJ-`), `github:<owner>/<repo>#` for GitHub Issues, or `linear-project:<Linear project name>` for **Native tickets**. A `linear-project:` entry matches a Factory ticket in that Linear project with no Upstream link; it never matches by prefix.
   - `repo`: path of the project checkout on the runner: absolute, or starting with `~/` for the home directory, so one `projects.json` serves Windows, Linux and macOS. Keep checkouts at `~/Projects/<org>/repos/<name>` on every machine (on Windows a junction from `~/Projects` to another drive or folder works).
@@ -41,6 +42,7 @@ Maps an Upstream ticket to the project the factory works in. Example: [projects.
   - `pr_ready`: optional; `draft` (the default) leaves every PR a draft until the owner promotes it, and `auto` lets the implementation run promote it when the ready check passes ([ready-check.md](../../alves-factory-implement/references/ready-check.md)). Only this switch is per project: the ready check's conditions are fixed.
   - `council`: optional; this project's Council seats, as the name of an entry in `councils` or an inline object.
   - `discovery`: optional; an object, which may be `{}`, that turns on the daily Discovery pass for this entry. See **Discovery** below.
+  - `design`: optional; the entry's design work: its Factory Figma file, Figma server and design Council. See **Design** below.
 
 ## Discovery
 
@@ -124,6 +126,39 @@ python <run-skill-dir>/scripts/council.py --project "PROJ-" [--linear-project <n
 The run passes `--council <work-dir>/council.json` to every review round. Each round writes the seats with the options actually sent to `round-<N>/council.json`, and the gate checks every review against it. Config edits affect new runs; an active run keeps its snapshot.
 
 These settings choose Council reviewers only. The triage, planning and implementation threads run on the model set on the T3 scheduled task that starts them.
+
+## Design
+
+A project does design work (`alves-factory-design-explore`, spec `docs/factory/specs/2026-11-27-design.md` in the skills repo) only when its entry has a `design` object:
+
+| Field | Meaning |
+|---|---|
+| `figma_file` | Required. The **Factory Figma file**'s key: the file the factory designs in (ADR 0011), owned by a plan where the account has a Full seat. |
+| `figma_server` | Required. The name of the repo's local-scope Figma MCP server (`figma-<account>`), the only Figma connection a design run uses. |
+| `council` | Optional. This project's design Council seats: the name of an entry in the top-level `design_councils`, or an inline object. |
+| `policy` | Optional. A design policy file layered over `~/.alves-factory/design-policy.json` (when present) and the [bundled design policy](../../alves-factory-design-review/assets/default-policy.json). |
+| `variation_target` | Optional. The `target` (as in **Council targets**) every Variation agent runs on; all of them share it. Default `claudeAgent` / `claude-opus-5-5`, high effort. |
+| `figma_limits` | Optional. `{"per_day": n, "per_minute": n}`, the Figma plan's MCP limits quoted in a Figma limit comment. Default 200 and 15 (Full seat, Organization plan). |
+| `storybook` | Needed for the `arm:browser-first` Calibration arm: `{"dir", "install", "port", "stories_dir"}`, the package folder, its install command, the first port (each parallel Variation adds its index) and the folder a temporary story goes in. |
+
+```json
+{
+  "match": "PCS-",
+  "design": {
+    "figma_file": "DxN7crZvRDKoixHuDOPwnE",
+    "figma_server": "figma-fullsteam",
+    "storybook": { "dir": "packages/ui", "install": "npm ci", "port": 6006, "stories_dir": "packages/ui/docs" }
+  }
+}
+```
+
+**Design Council.** Its seats are `product-designer`, `art-director` and `design-system`, resolved like the plan Council: the [bundled design Council](../../alves-factory-design-review/assets/default-council.json) (`claude-opus-5-5`, `gpt-6.2-sol`, `claude-sonnet-5-5`), then the top-level `design_council`, then the entry's `design.council`, each layer replacing whole seats. The design gate's own rules apply on top: every seat must read images, no seat may use an excluded connection (Copilot, whose OAuth Figma rejects), and the Council needs at least the design policy's `min_models` distinct models (2).
+
+```sh
+python <run-skill-dir>/scripts/council.py --design --project "PROJ-" [--linear-project <name>] [--policy <design policy file> ...] --out <design-dir>/design-council.json
+```
+
+Exit `2` names an invalid seat, an unknown name, a plan lens in a design Council, an excluded connection or a Council below the floor.
 
 ## GitHub account
 
