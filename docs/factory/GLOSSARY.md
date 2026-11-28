@@ -1,6 +1,6 @@
 # Software Factory
 
-A personal factory of agents that plans, reviews and implements work assigned to its owner in any project, keeping its own record apart from that project's tracking. It extends the vocabulary of the `software-factory` skill (Task, Trigger, Run, Runner, Orchestrator) and uses those terms with the same meaning.
+A personal factory of agents that plans, reviews and implements work assigned to its owner in any project, and designs it in Figma when the work calls for a design, keeping its own record apart from that project's tracking. It extends the vocabulary of the `software-factory` skill (Task, Trigger, Run, Runner, Orchestrator) and uses those terms with the same meaning.
 
 ## Trackers and tickets
 
@@ -69,8 +69,8 @@ One reviewer's evaluation of one revision of a Plan, scoring each rubric criteri
 _Avoid_: council review, vote
 
 **Council**:
-The set of independent reviewers who each produce a Plan review of the same revision in one round.
-_Avoid_: panel, review board
+The set of independent reviewers who each review the same revision in one round: of a Plan, of a diff, or of a design. A design Council has its own seats and rubric.
+_Avoid_: panel, review board, design council (as a separate body)
 
 **Council seat**:
 The T3 connection and exact model configured to review one lens of a Council. Every review must come from its lens's seat; one model may hold several seats.
@@ -129,6 +129,56 @@ _Avoid_: fallback, deviation (alone)
 **Promotion**:
 Marking the factory's draft PR ready for review by the project team, either by the ready check on a project that allows it or by the owner moving the Factory ticket to Team Review.
 _Avoid_: publishing, undrafting, approval
+
+## Design
+
+**Factory Figma file**:
+The Figma file, one per project and owned by that project's Figma account, where the factory builds every design using the project team's published library. The team's own design file receives a design only when the owner says so.
+_Avoid_: project file, design file, team file
+
+**Gap component**:
+A component the factory builds in a Factory Figma file, from the project's code, because the team's published library lacks it. A design that uses one tells the team that the library needs it.
+_Avoid_: local component, custom component, missing component
+
+**Design brief**:
+The shared statement of one piece of design work that every Variation is built from: the user's goal, the requirements, the design system constraints and the Design hypotheses to explore.
+_Avoid_: spec, PRD, prompt
+
+**Variation**:
+One of the designs the factory makes for the same piece of design work, built from one Design hypothesis as editable frames in the Factory Figma file.
+_Avoid_: concept, direction, option, alternative
+
+**Design hypothesis**:
+The premise about what matters most to the user, such as productivity-first or clarity-first, that makes one Variation differ from the others. Variations that differ only in color, type or spacing do not have different Design hypotheses.
+_Avoid_: theme, style, approach
+
+**Exploration**:
+The mode that produces several Variations of the same work so the owner can choose between them. It aims for diversity, with only enough polish for the owner to judge each one.
+_Avoid_: ideation, divergence, brainstorm
+
+**Selection**:
+The owner's decision after Exploration: keep one Variation, combine parts of several, ask for more Exploration, or reject them all. Selection always belongs to the owner. The Council may recommend a Variation, but it never selects one.
+_Avoid_: approval, pick, design gate
+
+**Refinement**:
+The mode that improves only the design the owner selected, through repeated rounds of Council review, until it clears the bar or runs out of rounds.
+_Avoid_: hill climbing, polish, iteration
+
+**Design review**:
+One reviewer's evaluation of one revision of a design, made from its rendered screenshot and the Design brief alone, never from the designing agent's own rationale. A critical usability or accessibility defect fails the design, whatever its score.
+_Avoid_: critique, design QA, visual review
+
+**Design approval**:
+The owner's acceptance of a refined design, which ends design work. A design that clears the Council's bar is handed to the owner for Design approval and is never approved without them.
+_Avoid_: sign-off, final review, Promotion
+
+**Design handoff**:
+The record of an approved design, kept on the Factory ticket, that holds everything planning needs to start from that design at any later time without asking the owner. Every Design approval produces one, including when the owner stops at the design. It holds the design as approved: if the approved frames change afterwards, planning stops until the owner approves again.
+_Avoid_: spec, design notes, dev handoff
+
+**Calibration set**:
+A fixed set of design briefs, with designs the owner considers excellent and the owner's own scores for them, that the factory's design reviews and any added design skill are measured against.
+_Avoid_: benchmark, eval set, golden set
 
 ## Operations
 
