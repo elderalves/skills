@@ -29,7 +29,11 @@
       },
       "linear_project": "Proj",
       "github_account": "my-work-account",
-      "discovery": {}
+      "discovery": {},
+      "design": {
+        "figma_file": "AbCdEfGhIjKlMnOpQrStUv",
+        "figma_server": "figma-acme"
+      }
     },
     {
       "match": "linear-project:My Side Project",

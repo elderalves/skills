@@ -207,6 +207,81 @@ class BillingWarnings(unittest.TestCase):
         self.assertEqual(warnings, [])
 
 
+
+GPT = ("codex", "gpt-6.2-sol")
+
+
+def design_seats(*targets):
+    return {lens: seat(*target) for lens, target in zip(["product-designer", "art-director", "design-system"], targets)}
+
+
+def design_policy(**fields):
+    gate = council.design_gate()
+    return gate.merge(gate.load_policy([]), fields)
+
+
+class DesignCouncils(unittest.TestCase):
+    def test_default_design_council(self):
+        result = council.resolve(config(), "PCS-", design_policy(), design=True)
+        self.assertEqual(result, design_seats(OPUS, GPT, SONNET))
+
+    def test_the_plan_council_is_untouched_by_design_settings(self):
+        cfg = config(design_council=design_seats(SONNET, SONNET, GPT))
+        self.assertEqual(council.resolve(cfg, "PCS-")["architecture"], seat(*OPUS))
+
+    def test_layers_shared_then_named_project_seats(self):
+        cfg = config(design_council={"design-system": seat(*GPT)},
+                     design_councils={"agilekit": {"product-designer": seat(*SONNET)}})
+        cfg["projects"][0]["design"] = {"council": "agilekit", "figma_file": "K"}
+        result = council.resolve(cfg, "PCS-", design_policy(), design=True)
+        self.assertEqual(result, design_seats(SONNET, GPT, GPT))
+        self.assertEqual(council.resolve(cfg, "SIDE-", design_policy(), design=True)["product-designer"], seat(*OPUS))
+
+    def test_inline_project_design_council(self):
+        cfg = config()
+        cfg["projects"][0]["design"] = {"council": {"art-director": seat(*SONNET)}}
+        self.assertEqual(council.resolve(cfg, "PCS-", design_policy(), design=True)["art-director"], seat(*SONNET))
+
+    def test_unknown_design_council_name_is_an_error(self):
+        cfg = config()
+        cfg["projects"][0]["design"] = {"council": "nope"}
+        with self.assertRaisesRegex(council.ConfigError, "not in design_councils"):
+            council.resolve(cfg, "PCS-", design_policy(), design=True)
+
+    def test_plan_lenses_are_not_design_seats(self):
+        with self.assertRaisesRegex(council.ConfigError, "unknown lenses"):
+            council.resolve(config(design_council={"requirements": seat(*OPUS)}), "PCS-", design_policy(), design=True)
+
+    def test_copilot_is_excluded_from_design_seats(self):
+        cfg = config(design_council={"art-director": seat(*OPUS_VIA_COPILOT)})
+        with self.assertRaisesRegex(council.ConfigError, "excluded from design review"):
+            council.resolve(cfg, "PCS-", design_policy(), design=True)
+
+    def test_the_design_floor_of_two_models_counts_one_model_once(self):
+        cfg = config(design_council=design_seats(OPUS, ("opencode", "opencode/claude-opus-5.5"), OPUS))
+        with self.assertRaisesRegex(council.ConfigError, "1 distinct model.*product-designer=claude-opus-5-5"):
+            council.resolve(cfg, "PCS-", design_policy(), design=True)
+
+    def test_cli_design_mode_writes_the_design_council(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "projects.json"
+            path.write_text(json.dumps(config()))
+            out = Path(tmp) / "design-council.json"
+            with redirect_stdout(io.StringIO()):
+                code = council.main(["--design", "--project", "PCS-", "--config", str(path), "--out", str(out)])
+            self.assertEqual(code, 0)
+            self.assertEqual(set(json.loads(out.read_text())), {"product-designer", "art-director", "design-system"})
+
+    def test_cli_design_mode_exits_2_below_the_floor(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "projects.json"
+            path.write_text(json.dumps(config(design_council=design_seats(OPUS, OPUS, OPUS))))
+            err = io.StringIO()
+            with redirect_stdout(io.StringIO()), redirect_stderr(err):
+                code = council.main(["--design", "--project", "PCS-", "--config", str(path)])
+            self.assertEqual(code, 2)
+            self.assertIn("distinct model", err.getvalue())
+
 class Cli(unittest.TestCase):
     def run_cli(self, work, settings, *extra):
         path = Path(work) / "projects.json"

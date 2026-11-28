@@ -78,6 +78,12 @@ The team's statuses, by exact name, and who sets each:
 | Done | the sweep, or owner | the factory PR merged |
 | Canceled | owner | dropped; on a Discovered ticket, rejected, and Discovery reads the owner's comment there as the reason |
 | Duplicate | either run | a second Factory ticket for the same Upstream ticket |
+| **Ready for Design** | owner | trigger: start (or restart) an Exploration run (`alves-factory-design-explore`) |
+| Exploring | Exploration run | the Exploration run owns the ticket; stale limit 4 h (the sweep honours it from build step 6) |
+| Awaiting Selection | Exploration run | the Selection comment is posted; waiting on the owner's Selection |
+| **Refining** | owner | trigger: refine the selected design (`alves-factory-design-refine`, build step 4) |
+| Awaiting Design Approval | Refinement run | waiting on the owner's Design approval: **Ready** plans from the Design handoff, **Design Done** stops at the design |
+| Design Done | owner | design approved and handed off; planning can start from the handoff later |
 
 **Ownership:** a run that finds its ticket in Planning, Plan Review or In Progress exits without acting: another run owns it. A run that crashed leaves its status behind. The **sweep** (`alves-factory-sweep`) finds it once no factory comment has come for the stale limit, and moves it back to Ready (or Plan Approved) to start a new run; a ticket that stalls again right after that restart goes to Blocked, and the owner moves it back by hand. The sweep's comments are factory comments whose heading starts `## Sweep:`.
 
@@ -166,6 +172,46 @@ For **unsure**, on a ticket triage parked in Backlog:
 ```
 
 A Factory ticket's Linear project names its repo: the later stages resolve the project with the upstream ref **and** that Linear project, so moving the ticket to another Linear project moves the work to that project's repo.
+
+## Design work
+
+Design work uses the same Factory ticket, record and ownership rules; the spec is `docs/factory/specs/2026-11-27-design.md` in the skills repo. A ticket enters design when the owner moves it to **Ready for Design**; nothing else starts design work.
+
+**Labels the owner sets:**
+
+- `variations:<n>`: how many Variations an Exploration builds, 2 to 5 (default 3).
+- `calibration`: a Calibration brief. It must also carry exactly one arm label.
+- `arm:direct` or `arm:browser-first`: how Variations are built (default `direct`); see the spec's **Calibration**.
+
+**Document:** `Design brief`, the current Design brief, updated in place by every Exploration.
+
+**Progress comment**, posted once the Variations are built, so the sweep sees the run is alive:
+
+```markdown
+[alves-factory]
+
+## Exploring: Exploration <n>
+
+Built <A, B, C> on the ticket's Figma page; the design Council is reviewing them.<missing Variations and why, if any>
+```
+
+**Selection comment**, one per Exploration, built by `selection_comment.py` from the design Council's decision: a score table, then per Variation its screenshot (uploaded to Linear), Design hypothesis, critical defects, top findings, strengths and trade-offs, then the Council's recommendation, the Figma page link, how to continue, the run cost, and the **design record**: a JSON block with each Variation's file key, frame node id, score and veto, which the Refinement run reads. Its heading is `## Selection: Exploration <n>`; the next Exploration's number is one more than the highest so far.
+
+**Owner direction.** The owner answers a Selection comment with an ordinary comment ("B, with C's side panel"), then sets **Refining**, **Ready for Design** (explore again: the comment says what to change) or **Canceled**. An Exploration reads every owner comment after the latest Selection comment (on the first Exploration, every owner comment) as its direction.
+
+**Figma limit comment**, when the Figma plan's MCP limit stops a run, which then ends **Blocked**. The sweep never retries a ticket whose latest factory comment is a Figma limit; the owner moves it back to Ready for Design after the reset:
+
+```markdown
+[alves-factory]
+
+## Figma limit
+
+The Figma MCP limit stopped this run at **<step>**: `<error>`
+...
+**To continue:** after the limit resets, move the ticket back to **Ready for Design**. The sweep does not retry a Figma limit.
+```
+
+**Run cost.** Every design run's final comment (Selection, Figma limit or Blocked) ends with its cost line: `**Run cost:** <minutes> min · <tokens> tokens · <n> Figma calls`, naming any step whose tool reported no tokens.
 
 ## Owner answers
 
