@@ -1,0 +1,28 @@
+{
+  "seats": {
+    "product-designer": ["usability", "visual_hierarchy", "information_architecture"],
+    "art-director": ["composition", "typography", "visual_identity"],
+    "design-system": ["design_system", "accessibility", "figma_structure"]
+  },
+  "weights": {
+    "usability": 15,
+    "visual_hierarchy": 15,
+    "information_architecture": 10,
+    "composition": 15,
+    "typography": 10,
+    "visual_identity": 10,
+    "design_system": 10,
+    "accessibility": 10,
+    "figma_structure": 5
+  },
+  "veto_categories": ["usability", "accessibility"],
+  "finding_below": 7,
+  "min_models": 2,
+  "excluded_connections": ["acpRegistry_github_copilot"],
+  "refine": {
+    "max_rounds": 4,
+    "plateau_delta": 0.3,
+    "plateau_rounds": 2,
+    "pass_mark": null
+  }
+}

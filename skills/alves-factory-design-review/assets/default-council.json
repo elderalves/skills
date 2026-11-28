@@ -1,0 +1,11 @@
+{
+  "product-designer": {
+    "target": { "providerInstanceId": "claudeAgent", "model": "claude-opus-5-5" }
+  },
+  "art-director": {
+    "target": { "providerInstanceId": "codex", "model": "gpt-6.2-sol" }
+  },
+  "design-system": {
+    "target": { "providerInstanceId": "claudeAgent", "model": "claude-sonnet-5-5" }
+  }
+}
