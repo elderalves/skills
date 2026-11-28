@@ -136,6 +136,10 @@ _Avoid_: publishing, undrafting, approval
 The Figma file, one per project and owned by that project's Figma account, where the factory builds every design using the project team's published library. The team's own design file receives a design only when the owner says so.
 _Avoid_: project file, design file, team file
 
+**Gap component**:
+A component the factory builds in a Factory Figma file, from the project's code, because the team's published library lacks it. A design that uses one tells the team that the library needs it.
+_Avoid_: local component, custom component, missing component
+
 **Design brief**:
 The shared statement of one piece of design work that every Variation is built from: the user's goal, the requirements, the design system constraints and the Design hypotheses to explore.
 _Avoid_: spec, PRD, prompt
